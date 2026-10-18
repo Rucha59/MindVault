@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window background matches MindVaultColors.Background to avoid a white flash at launch. -->
+    <style name="Theme.MindVault" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F0F1E9</item>
+    </style>
+</resources>
