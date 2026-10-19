@@ -19,19 +19,19 @@
 | Android project and Gradle setup | Verified | Builds and installs on an emulator (API 35, x86_64). |
 | App theme and reusable UI components | Verified | Light/dark theme confirmed switching with system setting on-device. |
 | Main navigation shell | Verified | All 5 destinations (Home, Search, Vault, Flashcards, Profile) + Add sheet confirmed navigable on-device. |
-| Architecture and dependency injection | Implemented — unverified | Hilt compiles and the app launches (`@HiltAndroidApp`/`@AndroidEntryPoint` wired), but no injected dependency has been exercised yet — nothing is injected besides the framework setup itself. |
-| Knowledge data model | Not started | — |
-| Room database and migrations | Not started | — |
+| Architecture and dependency injection | Implemented — unverified | Hilt wired in Phase 1; Phase 2 adds `DatabaseModule` and `RepositoryModule` (written, not built). |
+| Knowledge data model | Written — unverified | Domain models and entities for KnowledgeItem, Category, Deck, Flashcard, ReviewState. See `docs/CODE_CHANGES.md` Entry 3. |
+| Room database and migrations | Written — unverified | `MindVaultDatabase` v1, schema export on, empty migration list, default deck seeded on create. Needs a build to confirm Room's compile-time checks pass. |
 | Manual add/view/edit/delete | Not started | `AddKnowledgeScreen` is a labeled placeholder only. |
-| Categories | Not started | — |
+| Categories | Written — unverified | Data layer only (entity, DAO, repository). No UI. |
 | Vault sorting and filtering | Not started | Vault screen shows only an empty state. |
 | Home dashboard | Not started | Home screen is static UI; no real data source. |
 | External Search integration | Not started | Search field is present but disabled. |
 | Save Search result to Vault | Not started | — |
-| Default and custom flashcard decks | Not started | — |
-| Flashcard review and state persistence | Not started | — |
+| Default and custom flashcard decks | Written — unverified | Data layer only; unique card per item per deck enforced by index. |
+|Flashcard review and state persistence | Written — unverified | Review state storage only; no scheduling logic yet. |
 | Profile and Settings basics | Not started | Profile screen shows only an empty state. |
-| Unit/database/UI tests | Not started | — |
+|  Unit/database/UI tests | Written — unverified | `MappersTest` (JVM) and `MindVaultDatabaseTest` (instrumented). Not run. |
 | Debug/release build | Verified (debug only) | `assembleDebug` and `installDebug` succeed. Release build not attempted. |
 
 ## 3. Files Changed
@@ -41,6 +41,7 @@
 | — | Phase 1: Project foundation and UI shell | Full Gradle project setup, theme (`core/theme/`), navigation (`core/navigation/`), reusable components (`core/ui/components/`), 6 placeholder screens (`feature/*`). Full list in `docs/CODE_CHANGES.md`, Entry 1. | Implemented — unverified at time of writing |
 | — | Phase 1: Dark mode | `core/theme/Color.kt` (rewritten), `core/theme/Theme.kt` (rewritten), `app/MainActivity.kt` (edge-to-edge default), new `res/values-night/themes.xml`. Full detail in `docs/CODE_CHANGES.md`, Entry 2. | Implemented — unverified at time of writing |
 | 2026-10-17 | Phase 1: Build/run debugging | Fixed: renamed `gradle/libs.version.toml` → `libs.versions.toml`; updated Android Studio to Rabbit 1 to resolve AGP mismatch; populated empty `MainActivity.kt`; created missing `app/` package folder and moved `MainActivity.kt`/`MindVaultApp.kt` into it; created missing `core/theme/Color.kt` and `core/theme/Type.kt`; fixed `MindVaultDestination.kt` companion-object init-order crash (`bottomBarRoutes` changed to `by lazy`). | **Verified** — app builds (`assembleDebug`) and runs on emulator without crashing. |
+| — | Phase 2: Data model and Room | Gradle: `libs.versions.toml`, `app/build.gradle.kts`. New: `core/util`, `core/di`, `domain/*`, `data/*`, 2 test files. Full list in `docs/CODE_CHANGES.md`, Entry 3. | Written — unverified |
 
 ## 4. What's Working
 
@@ -95,14 +96,7 @@ Known product limitations (unimplemented, not bugs):
 
 ## 7. Next Task
 
-**Recommended next task:** Room database and the Add/Edit knowledge form (Manual Add from `PROJECT_BRIEF.md` §2.2), since every other unbuilt feature (Vault, Home, Flashcards) depends on saved data existing.
-
-Smallest next implementation step:
-1. Define the `KnowledgeItem` entity and DAO per `ARCHITECTURE.md` §6.
-2. Build the Room database class and provide it via Hilt.
-3. Build `AddKnowledgeScreen`'s real form (title, type, definition, notes, example, category) wired to a `ViewModel` and a save use case.
-4. Verify: creating an item persists across a force-close/reopen.
-
+**Recommended next task:** Phase 3, the Add/Edit knowledge form: use cases with validation (`SaveKnowledgeItemUseCase`), `AddKnowledgeViewModel`, and the real form. This needs `hilt-navigation-compose` and the lifecycle ViewModel dependencies, which are not in the catalog yet.
 ## 8. Handoff Template for a New AI Conversation
 
 - **Current phase:** Phase 1 complete and verified (foundation + UI shell + dark mode). Phase 2 not started.
