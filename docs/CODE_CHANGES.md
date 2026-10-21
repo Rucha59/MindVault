@@ -156,3 +156,108 @@ Accents (foreground / background), dark: Gold `#E6C27A`/`#3A2E16`, Terracotta `#
 
 ### Not built (by design)
 Use cases, ViewModels, Add/Edit form, Vault queries, review scheduling logic, external Search, auth, AI, sync metadata.
+
+---
+
+## Entry 5 — Phase 3: Add form, saving, and basic Vault list
+
+**Status:** Written, not built.
+
+**Goal:** First real feature. Add a concept through a validated form, save it to Room, and see it in the Vault. No detail, edit, delete, filter, sort, Search or flashcards.
+
+### Files modified
+| File | Change                                                                                                        |
+|---|---------------------------------------------------------------------------------------------------------------|
+| `gradle/libs.versions.toml` | Added `lifecycle` 2.8.7 and `hiltNavigationCompose` 1.2.0 with three libraries                                |
+| `app/build.gradle.kts` | Added hilt-navigation-compose, lifecycle-runtime-compose, lifecycle-viewmodel-compose, change ksp { room.schemaDirectory } to ksp { room.schemaLocation }.                       |
+| `…/feature/knowledge/AddKnowledgeScreen.kt` | **Replaced.** Real form replaces the placeholder; same signature plus `viewModel = hiltViewModel()`           |
+| `…/feature/vault/VaultScreen.kt` | **Replaced.** Loading/empty/error/list states and an Add icon in the top bar; same signature plus `viewModel` |
+
+### Files created (under `…/mindvault/`)
+| File | Purpose |
+|---|---|
+| `domain/model/KnowledgeValidation.kt` | `KnowledgeField`, `ValidationError`, `SaveKnowledgeResult`, `CreateCategoryResult` |
+| `domain/model/VaultEntry.kt` | Item + category name for list rows |
+| `domain/usecase/SaveKnowledgeItemUseCase.kt` | Validation (title/definition required, length limits) then save |
+| `domain/usecase/CreateCategoryUseCase.kt` | Name validation, then get-or-create |
+| `domain/usecase/ObserveCategoriesUseCase.kt` | Category Flow |
+| `domain/usecase/ObserveVaultItemsUseCase.kt` | Items joined with category names |
+| `core/ui/components/MindVaultTextField.kt` | Shared text input per design system |
+| `feature/knowledge/` | `KnowledgeTypeLabel.kt`, `AddKnowledgeUiState.kt`, `AddKnowledgeViewModel.kt`, `CategoryPicker.kt` |
+| `feature/vault/` | `VaultUiState.kt`, `VaultViewModel.kt` |
+| `app/src/test/…/domain/usecase/` | `FakeRepositories.kt`, `UseCasesTest.kt` |
+
+### Key decisions
+- **No navigation changes.** Screens obtain ViewModels with `hiltViewModel()`, scoped to their back-stack entry.
+- **Required fields:** title and definition. Limits: title 200, definition 5000, notes 5000, example 1000, category name 50. Defined in the use cases, not the UI.
+- **Duplicate titles are allowed** on manual add (a word can have several senses). Duplicate warnings arrive with Search, using `KnowledgeRepository.findByTitle`.
+- **Double-save blocked:** the form stays in the saving state until the screen closes.
+- **Unsaved changes:** back asks to discard if anything was entered.
+- **Categories:** picker with "New category…". A category created in the dialog persists even if the concept is discarded.
+- **Strings are hardcoded**, as in Phase 1. Move them to `strings.xml` before release.
+- Form state lives in the ViewModel: it survives rotation but not process death.
+  Schema export was misconfigured (wrong KSP option name) until Entry 5 follow-up fix; corrected to room.schemaLocation.
+
+### Not built (by design)
+Item detail/edit/delete, Vault filter/sort/search, Search, flashcard UI, settings, ViewModel unit tests.
+
+---
+
+## Entry 6 — Item detail view and Phase 3 build fixes
+
+**Status:** Written, not built (the fixes below were reported working on emulator).
+
+### Fixes to Entries 3 and 5
+- `feature/knowledge/CategoryPicker.kt`: removed the invalid import of `matchParentSize` (it is a `BoxScope` member and needs no import).
+- `app/build.gradle.kts`: KSP option corrected from `room.schemaDirectory` to `room.schemaLocation`. Room's schema export had been silently disabled; `app/schemas/.../1.json` should now be generated and committed.
+
+### Files modified
+| File | Change |
+|---|---|
+| `core/navigation/MindVaultDestination.kt` | Added `KNOWLEDGE_ID_ARG` and `KnowledgeDetail` route (`knowledge/detail/{itemId}`) |
+| `core/navigation/MindVaultNavHost.kt` | Detail `composable` with a String argument; Vault passes `onItemClick` |
+| `feature/vault/VaultScreen.kt` | Added `onItemClick`; cards are tappable |
+
+### Files created
+`domain/usecase/ObserveKnowledgeDetailUseCase.kt`, `feature/knowledge/KnowledgeDetailUiState.kt`, `KnowledgeDetailViewModel.kt`, `KnowledgeDetailScreen.kt`.
+
+### Key decisions
+- Read-only for now; the item ID arrives through `SavedStateHandle`.
+- The detail screen always shows a category tag ("Uncategorized" when none). Empty notes and example sections are hidden. Text is selectable.
+- Detail uses the same `VaultEntry` model as the list, so there is one source of truth.
+
+### Not built
+Edit, delete, flashcard creation from the detail screen.
+
+---
+
+## Entry 7 — Phase 4a: Edit and delete
+
+**Status:** Written, not built.
+
+**Goal:** Edit a saved item (reusing the Add form) and delete it with confirmation.
+
+### Files modified
+| File | Change |
+|---|---|
+| `domain/model/KnowledgeValidation.kt` | Added `UpdateKnowledgeResult` |
+| `domain/usecase/SaveKnowledgeItemUseCase.kt` | Replaced; validation moved to `KnowledgeValidator.kt` |
+| `core/navigation/MindVaultDestination.kt` | Added `KnowledgeEdit` route (`knowledge/edit/{itemId}`) |
+| `core/navigation/MindVaultNavHost.kt` | Detail gets `onEditClick`; new edit `composable` reusing `AddKnowledgeScreen` |
+| `feature/knowledge/AddKnowledgeUiState.kt`, `AddKnowledgeViewModel.kt`, `AddKnowledgeScreen.kt` | Replaced. Edit mode: loads the item, prefills, calls the update use case. `isDirty` now compares against the starting values. |
+| `feature/knowledge/KnowledgeDetailUiState.kt`, `KnowledgeDetailViewModel.kt`, `KnowledgeDetailScreen.kt` | Replaced. Edit and Delete icons; delete confirmation dialog with loading and error states. |
+| `…/test/…/FakeRepositories.kt`, `UseCasesTest.kt` | Fake `update` now persists; 4 new tests |
+
+### Files created
+`domain/usecase/KnowledgeValidator.kt`, `UpdateKnowledgeItemUseCase.kt`, `DeleteKnowledgeItemUseCase.kt`.
+
+### Key decisions
+- One form for Add and Edit; the ViewModel picks the mode from the presence of `itemId`.
+- Create and update share one validator, so the rules can't diverge.
+- Edit keeps `createdAt`; `updatedAt` changes, so the item moves to the top of the Vault.
+- Delete is permanent and cascades to flashcards and review state (database foreign keys, tested in Phase 2). The dialog says so.
+- After delete the detail screen shows a loading state rather than "not found" while it closes.
+- Unsaved edits prompt before discarding.
+
+### Not built
+Undo for delete, bulk delete, Vault filter/sort/search.

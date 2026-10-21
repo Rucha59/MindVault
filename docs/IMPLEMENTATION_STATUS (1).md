@@ -20,18 +20,18 @@
 | App theme and reusable UI components | Verified | Light/dark theme confirmed switching with system setting on-device. |
 | Main navigation shell | Verified | All 5 destinations (Home, Search, Vault, Flashcards, Profile) + Add sheet confirmed navigable on-device. |
 | Architecture and dependency injection | Implemented — unverified | Hilt wired in Phase 1; Phase 2 adds `DatabaseModule` and `RepositoryModule` (written, not built). |
-| Knowledge data model | Written — unverified | Domain models and entities for KnowledgeItem, Category, Deck, Flashcard, ReviewState. See `docs/CODE_CHANGES.md` Entry 3. |
-| Room database and migrations | Written — unverified | `MindVaultDatabase` v1, schema export on, empty migration list, default deck seeded on create. Needs a build to confirm Room's compile-time checks pass. |
-| Manual add/view/edit/delete | Not started | `AddKnowledgeScreen` is a labeled placeholder only. |
-| Categories | Written — unverified | Data layer only (entity, DAO, repository). No UI. |
-| Vault sorting and filtering | Not started | Vault screen shows only an empty state. |
+| Knowledge data model | Verified | Phase 2 build and tests run by Rucha; output not pasted. |
+| Room database and migrations | Verified | Same as above. No migrations exist yet (schema v1). |
+| Manual add/view/edit/delete |Add and view: verified on emulator. Edit and delete: written, unverified.|
+| Categories | Written — unverified | Create and pick in the Add form. No category management or filtering yet. |
+| Vault sorting and filtering | Not started | Vault shows an unfiltered list, most recently updated first. |
 | Home dashboard | Not started | Home screen is static UI; no real data source. |
 | External Search integration | Not started | Search field is present but disabled. |
 | Save Search result to Vault | Not started | — |
 | Default and custom flashcard decks | Written — unverified | Data layer only; unique card per item per deck enforced by index. |
 |Flashcard review and state persistence | Written — unverified | Review state storage only; no scheduling logic yet. |
 | Profile and Settings basics | Not started | Profile screen shows only an empty state. |
-|  Unit/database/UI tests | Written — unverified | `MappersTest` (JVM) and `MindVaultDatabaseTest` (instrumented). Not run. |
+| Unit/database/UI tests | Partial | Phase 2 tests run. Phase 3 adds use-case unit tests (written, not run). No ViewModel or UI tests. |
 | Debug/release build | Verified (debug only) | `assembleDebug` and `installDebug` succeed. Release build not attempted. |
 
 ## 3. Files Changed
@@ -42,7 +42,7 @@
 | — | Phase 1: Dark mode | `core/theme/Color.kt` (rewritten), `core/theme/Theme.kt` (rewritten), `app/MainActivity.kt` (edge-to-edge default), new `res/values-night/themes.xml`. Full detail in `docs/CODE_CHANGES.md`, Entry 2. | Implemented — unverified at time of writing |
 | 2026-10-17 | Phase 1: Build/run debugging | Fixed: renamed `gradle/libs.version.toml` → `libs.versions.toml`; updated Android Studio to Rabbit 1 to resolve AGP mismatch; populated empty `MainActivity.kt`; created missing `app/` package folder and moved `MainActivity.kt`/`MindVaultApp.kt` into it; created missing `core/theme/Color.kt` and `core/theme/Type.kt`; fixed `MindVaultDestination.kt` companion-object init-order crash (`bottomBarRoutes` changed to `by lazy`). | **Verified** — app builds (`assembleDebug`) and runs on emulator without crashing. |
 | — | Phase 2: Data model and Room | Gradle: `libs.versions.toml`, `app/build.gradle.kts`. New: `core/util`, `core/di`, `domain/*`, `data/*`, 2 test files. Full list in `docs/CODE_CHANGES.md`, Entry 3. | Written — unverified |
-
+| — | Phase 3: Add form and Vault list | Gradle (2 files), `domain/model`, `domain/usecase`, `core/ui/components/MindVaultTextField.kt`, `feature/knowledge/*`, `feature/vault/*`, 2 test files. Full list in `docs/CODE_CHANGES.md`, Entry 5. | Written — unverified |
 ## 4. What's Working
 
 - App builds and installs via `gradlew.bat assembleDebug` / `installDebug` without errors.
@@ -95,9 +95,7 @@ Known product limitations (unimplemented, not bugs):
 - Final design tokens and approved screen references (current tokens are implemented per `DESIGN_SYSTEM.md`; no deviations recorded beyond the dark-palette values chosen in Entry 2 of `docs/CODE_CHANGES.md`, which are unmeasured for contrast).
 
 ## 7. Next Task
-
-**Recommended next task:** Phase 3, the Add/Edit knowledge form: use cases with validation (`SaveKnowledgeItemUseCase`), `AddKnowledgeViewModel`, and the real form. This needs `hilt-navigation-compose` and the lifecycle ViewModel dependencies, which are not in the catalog yet.
-## 8. Handoff Template for a New AI Conversation
+**Recommended next task:** Phase 4: Vault item detail, edit, delete (with confirmation), then category filter, type filter, sorting and search within the Vault.## 8. Handoff Template for a New AI Conversation
 
 - **Current phase:** Phase 1 complete and verified (foundation + UI shell + dark mode). Phase 2 not started.
 - **Exact task:** Not yet assigned — see "Next Task" above for the recommendation.

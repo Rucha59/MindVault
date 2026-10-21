@@ -25,7 +25,9 @@ import com.mindvault.feature.knowledge.AddKnowledgeScreen
 import com.mindvault.feature.profile.ProfileScreen
 import com.mindvault.feature.search.SearchScreen
 import com.mindvault.feature.vault.VaultScreen
-
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import com.mindvault.feature.knowledge.KnowledgeDetailScreen
 private const val TransitionMillis = 150
 
 @Composable
@@ -82,7 +84,14 @@ fun MindVaultNavHost() {
                 SearchScreen(onAddConceptClick = { navigateTo(MindVaultDestination.AddKnowledge) })
             }
             composable(MindVaultDestination.Vault.route) {
-                VaultScreen(onAddConceptClick = { navigateTo(MindVaultDestination.AddKnowledge) })
+                VaultScreen(
+                    onAddConceptClick = { navigateTo(MindVaultDestination.AddKnowledge) },
+                    onItemClick = { itemId ->
+                        navController.navigate(MindVaultDestination.KnowledgeDetail.createRoute(itemId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                )
             }
             composable(MindVaultDestination.Flashcards.route) {
                 FlashcardsScreen()
@@ -91,6 +100,26 @@ fun MindVaultNavHost() {
                 ProfileScreen(onBackClick = { navController.popBackStack() })
             }
             composable(MindVaultDestination.AddKnowledge.route) {
+                AddKnowledgeScreen(onBackClick = { navController.popBackStack() })
+            }
+            composable(
+                route = MindVaultDestination.KnowledgeDetail.route,
+                arguments = listOf(navArgument(KNOWLEDGE_ID_ARG) { type = NavType.StringType }),
+            ) {
+                KnowledgeDetailScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onEditClick = { itemId ->
+                        navController.navigate(MindVaultDestination.KnowledgeEdit.createRoute(itemId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
+            composable(
+                route = MindVaultDestination.KnowledgeEdit.route,
+                arguments = listOf(navArgument(KNOWLEDGE_ID_ARG) { type = NavType.StringType }),
+            ) {
+                // Same screen as Add; the ViewModel switches to edit mode when it receives an item ID.
                 AddKnowledgeScreen(onBackClick = { navController.popBackStack() })
             }
         }

@@ -39,7 +39,7 @@ android {
 
 // Room exports each schema version as JSON here. Commit this folder to Git.
 ksp {
-    arg("room.schemaDirectory", "$projectDir/schemas")
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -56,6 +56,9 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

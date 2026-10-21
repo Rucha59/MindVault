@@ -32,14 +32,13 @@ Kotlin · Jetpack Compose · Material 3 · Navigation Compose · MVVM · Hilt ·
 No API keys are needed yet.
 
 ## Current status
-
 | Area | State |
 |---|---|
 | App shell: theme (light/dark), navigation, shared components | Working, verified on emulator |
-| Screens (Home, Search, Vault, Flashcards, Profile, Add) | Placeholders showing empty states |
-| Room database, domain models, repositories, Hilt wiring | Written, **not yet built or tested** |
-| Add/Edit form, Vault list, Search, flashcard review | Not started |
-
+| Room database, domain models, repositories | Verified (build + tests) |
+| Add a concept form (validation, categories, save) | Written, not yet verified |
+| Vault list (read-only) | Written, not yet verified |
+| Item detail/edit/delete, filter/sort, Search, flashcards | Not started |
 The app does not save or show any data yet. Detailed status: `docs/IMPLEMENTATION_STATUS.md`.
 
 ## What the data layer covers (Phase 2)
