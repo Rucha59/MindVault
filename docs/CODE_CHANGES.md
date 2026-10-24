@@ -261,3 +261,34 @@ Edit, delete, flashcard creation from the detail screen.
 
 ### Not built
 Undo for delete, bulk delete, Vault filter/sort/search.
+
+---
+
+## Entry 8 — Phase 4b: Vault search, filter and sort
+
+**Status:** Written, not built.
+
+**Goal:** Search saved items, filter by type and category, sort by recent activity or alphabetically.
+
+### Files modified
+| File | Change |
+|---|---|
+| `core/ui/components/MindVaultTextField.kt` | Added optional `leadingIcon` |
+| `feature/vault/VaultUiState.kt` | Replaced: `VaultStatus` + one state holding query, categories, total and results |
+| `feature/vault/VaultViewModel.kt` | Replaced: combines items, categories, search text and filters |
+| `feature/vault/VaultScreen.kt` | Replaced: search field, type chips, category and sort dropdowns, count, clear filters, no-match state |
+
+### Files created
+`domain/model/VaultQuery.kt`, `domain/usecase/ApplyVaultQueryUseCase.kt`, `core/ui/components/MindVaultFilterChip.kt`, `app/src/test/…/domain/usecase/ApplyVaultQueryUseCaseTest.kt`.
+
+### Key decisions
+- Filtering and sorting run in memory on the observed list through one pure use case; no schema or DAO change. Move to SQL/FTS only if vaults get very large.
+- Search is case-insensitive; every word must match in title, definition, notes, example or category name.
+- Sort options: recently updated (default), recently added, A–Z, Z–A. Alphabetical ignores case.
+- Search text is Compose state in the ViewModel (not a StateFlow) so typing doesn't lag or jump the cursor.
+- Filters live in the ViewModel, so they survive rotation and tab switches. They reset when the app process restarts. "Clear filters" keeps the sort.
+- "Vault empty" (no saved items) and "no matches" (filters hide everything) are separate states.
+- Built a search box from `MindVaultTextField` because `MindVaultSearchField.kt` had not been reviewed; swap if desired.
+
+### Not built
+Persisting sort/filter across restarts (needs settings storage), highlighting matched text, multi-select filters.

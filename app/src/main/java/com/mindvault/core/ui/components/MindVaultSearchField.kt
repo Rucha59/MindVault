@@ -17,7 +17,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mindvault.core.theme.MindVaultColors
 import com.mindvault.core.theme.ShapeLarge
-
+import androidx.compose.foundation.text.KeyboardActions
 /** Search input: leading search icon, clear action when non-empty, Forest focus outline. */
 @Composable
 fun MindVaultSearchField(
@@ -26,6 +26,7 @@ fun MindVaultSearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     OutlinedTextField(
         value = value,
@@ -47,6 +48,7 @@ fun MindVaultSearchField(
             null
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = keyboardActions,
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = MindVaultColors.TextPrimary,
             unfocusedTextColor = MindVaultColors.TextPrimary,

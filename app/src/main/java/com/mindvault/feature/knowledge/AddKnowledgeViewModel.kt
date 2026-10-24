@@ -5,6 +5,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mindvault.core.navigation.KNOWLEDGE_ID_ARG
+import com.mindvault.core.navigation.PREFILL_DEFINITION_ARG
+import com.mindvault.core.navigation.PREFILL_EXAMPLE_ARG
+import com.mindvault.core.navigation.PREFILL_TITLE_ARG
 import com.mindvault.domain.model.CreateCategoryResult
 import com.mindvault.domain.model.KnowledgeField
 import com.mindvault.domain.model.KnowledgeItem
@@ -33,7 +36,10 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AddKnowledgeVM"
 
-/** Serves both Add (no item ID in the route) and Edit (item ID present). */
+/**
+ * Serves Add (no item ID in the route), Edit (item ID present) and Add-from-Search
+ * (prefill arguments present; the form starts filled in and counts as unsaved).
+ */
 @HiltViewModel
 class AddKnowledgeViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -47,8 +53,23 @@ class AddKnowledgeViewModel @Inject constructor(
     private val editingItemId: String? = savedStateHandle.get<String>(KNOWLEDGE_ID_ARG)
     private var originalItem: KnowledgeItem? = null
 
+    /** Set only when the form was opened from a Search result with "Edit first". */
+    private val prefill: KnowledgeFormValues? = savedStateHandle.get<String>(PREFILL_TITLE_ARG)?.let { title ->
+        KnowledgeFormValues(
+            title = title,
+            definition = savedStateHandle.get<String>(PREFILL_DEFINITION_ARG).orEmpty(),
+            example = savedStateHandle.get<String>(PREFILL_EXAMPLE_ARG).orEmpty(),
+        )
+    }
+
     private val _uiState = MutableStateFlow(
-        AddKnowledgeUiState(isEditing = editingItemId != null, isLoading = editingItemId != null),
+        AddKnowledgeUiState(
+            title = prefill?.title.orEmpty(),
+            definition = prefill?.definition.orEmpty(),
+            example = prefill?.example.orEmpty(),
+            isEditing = editingItemId != null,
+            isLoading = editingItemId != null,
+        ),
     )
     val uiState: StateFlow<AddKnowledgeUiState> = _uiState.asStateFlow()
 

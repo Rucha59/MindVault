@@ -22,9 +22,9 @@
 | Architecture and dependency injection | Implemented — unverified | Hilt wired in Phase 1; Phase 2 adds `DatabaseModule` and `RepositoryModule` (written, not built). |
 | Knowledge data model | Verified | Phase 2 build and tests run by Rucha; output not pasted. |
 | Room database and migrations | Verified | Same as above. No migrations exist yet (schema v1). |
-| Manual add/view/edit/delete |Add and view: verified on emulator. Edit and delete: written, unverified.|
+| Manual add/view/edit/delete |Add and view: verified on emulator. Edit and delete: written, verified.|
 | Categories | Written — unverified | Create and pick in the Add form. No category management or filtering yet. |
-| Vault sorting and filtering | Not started | Vault shows an unfiltered list, most recently updated first. |
+| Vault sorting and filtering | Written, unverified. Search, type and category filters, 4 sort orders. See docs/CODE_CHANGES.md Entry 8. |
 | Home dashboard | Not started | Home screen is static UI; no real data source. |
 | External Search integration | Not started | Search field is present but disabled. |
 | Save Search result to Vault | Not started | — |

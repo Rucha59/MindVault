@@ -81,7 +81,19 @@ fun MindVaultNavHost() {
                 )
             }
             composable(MindVaultDestination.Search.route) {
-                SearchScreen(onAddConceptClick = { navigateTo(MindVaultDestination.AddKnowledge) })
+                SearchScreen(
+                    onAddConceptClick = { navigateTo(MindVaultDestination.AddKnowledge) },
+                    onViewSavedClick = { itemId ->
+                        navController.navigate(MindVaultDestination.KnowledgeDetail.createRoute(itemId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onEditBeforeSaveClick = { title, definition, example ->
+                        navController.navigate(
+                            MindVaultDestination.AddKnowledgeFromSearch.createRoute(title, definition, example),
+                        ) { launchSingleTop = true }
+                    },
+                )
             }
             composable(MindVaultDestination.Vault.route) {
                 VaultScreen(
@@ -100,6 +112,19 @@ fun MindVaultNavHost() {
                 ProfileScreen(onBackClick = { navController.popBackStack() })
             }
             composable(MindVaultDestination.AddKnowledge.route) {
+                AddKnowledgeScreen(onBackClick = { navController.popBackStack() })
+            }
+            composable(
+                route = MindVaultDestination.AddKnowledgeFromSearch.route,
+                arguments = listOf(PREFILL_TITLE_ARG, PREFILL_DEFINITION_ARG, PREFILL_EXAMPLE_ARG).map { name ->
+                    navArgument(name) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                },
+            ) {
+                // Same form as Add; the ViewModel prefills it from the route arguments.
                 AddKnowledgeScreen(onBackClick = { navController.popBackStack() })
             }
             composable(

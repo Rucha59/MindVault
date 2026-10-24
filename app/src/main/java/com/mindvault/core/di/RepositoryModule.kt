@@ -4,10 +4,12 @@ import com.mindvault.data.repository.CategoryRepositoryImpl
 import com.mindvault.data.repository.DeckRepositoryImpl
 import com.mindvault.data.repository.FlashcardRepositoryImpl
 import com.mindvault.data.repository.KnowledgeRepositoryImpl
+import com.mindvault.data.repository.SearchRepositoryImpl
 import com.mindvault.domain.repository.CategoryRepository
 import com.mindvault.domain.repository.DeckRepository
 import com.mindvault.domain.repository.FlashcardRepository
 import com.mindvault.domain.repository.KnowledgeRepository
+import com.mindvault.domain.repository.SearchRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -28,4 +30,7 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindFlashcardRepository(impl: FlashcardRepositoryImpl): FlashcardRepository
+
+    @Binds @Singleton
+    abstract fun bindSearchRepository(impl: SearchRepositoryImpl): SearchRepository
 }

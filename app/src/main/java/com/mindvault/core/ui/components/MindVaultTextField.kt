@@ -31,6 +31,7 @@ fun MindVaultTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingIcon: (@Composable () -> Unit)? = null,
+    leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     val message = errorText ?: supportingText
     OutlinedTextField(
@@ -39,6 +40,7 @@ fun MindVaultTextField(
         modifier = modifier.fillMaxWidth(),
         readOnly = readOnly,
         label = { Text(label) },
+        leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
         isError = errorText != null,
         supportingText = message?.let { text -> { Text(text) } },
