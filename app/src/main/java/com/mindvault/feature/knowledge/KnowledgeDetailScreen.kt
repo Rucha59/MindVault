@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +60,7 @@ fun KnowledgeDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val deleteState by viewModel.deleteState.collectAsStateWithLifecycle()
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    var showAddToDeck by rememberSaveable { mutableStateOf(false) }
     val currentOnBack by rememberUpdatedState(onBackClick)
 
     LaunchedEffect(deleteState.isDeleted) {
@@ -74,6 +76,9 @@ fun KnowledgeDetailScreen(
             actions = {
                 if (entry != null) {
                     val iconColors = IconButtonDefaults.iconButtonColors(contentColor = MindVaultColors.TextPrimary)
+                    IconButton(onClick = { showAddToDeck = true }, colors = iconColors) {
+                        Icon(Icons.Outlined.Style, contentDescription = "Add to flashcards")
+                    }
                     IconButton(onClick = { onEditClick(entry.item.id) }, colors = iconColors) {
                         Icon(Icons.Outlined.Edit, contentDescription = "Edit")
                     }
@@ -111,6 +116,10 @@ fun KnowledgeDetailScreen(
                 modifier = Modifier.weight(1f),
             )
         }
+    }
+
+    if (showAddToDeck) {
+        AddToDeckSheet(onDismiss = { showAddToDeck = false })
     }
 
     if (showDeleteDialog) {

@@ -19,7 +19,10 @@ import androidx.navigation.compose.rememberNavController
 import com.mindvault.core.theme.MindVaultColors
 import com.mindvault.core.ui.components.AddMenuSheet
 import com.mindvault.core.ui.components.MindVaultBottomBar
+import com.mindvault.feature.flashcards.AddCardsScreen
+import com.mindvault.feature.flashcards.DeckDetailScreen
 import com.mindvault.feature.flashcards.FlashcardsScreen
+import com.mindvault.feature.flashcards.StudyScreen
 import com.mindvault.feature.home.HomeScreen
 import com.mindvault.feature.knowledge.AddKnowledgeScreen
 import com.mindvault.feature.profile.ProfileScreen
@@ -78,7 +81,17 @@ fun MindVaultNavHost() {
                     onVaultClick = { navigateToMain(MindVaultDestination.Vault) },
                     onFlashcardsClick = { navigateToMain(MindVaultDestination.Flashcards) },
                     onProfileClick = { navigateTo(MindVaultDestination.Profile) },
-                )
+                    onItemClick = { itemId ->
+                        navController.navigate(MindVaultDestination.KnowledgeDetail.createRoute(itemId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onDeckClick = { deckId ->
+                        navController.navigate(MindVaultDestination.DeckDetail.createRoute(deckId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    )
             }
             composable(MindVaultDestination.Search.route) {
                 SearchScreen(
@@ -106,7 +119,54 @@ fun MindVaultNavHost() {
                 )
             }
             composable(MindVaultDestination.Flashcards.route) {
-                FlashcardsScreen()
+                FlashcardsScreen(
+                    onDeckClick = { deckId ->
+                        navController.navigate(MindVaultDestination.DeckDetail.createRoute(deckId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
+            composable(
+                route = MindVaultDestination.DeckDetail.route,
+                arguments = listOf(navArgument(DECK_ID_ARG) { type = NavType.StringType }),
+            ) {
+                DeckDetailScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onStudyClick = { deckId, shuffle ->
+                        navController.navigate(MindVaultDestination.Study.createRoute(deckId, shuffle)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onAddCardsClick = { deckId ->
+                        navController.navigate(MindVaultDestination.DeckAddCards.createRoute(deckId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onCardClick = { itemId ->
+                        navController.navigate(MindVaultDestination.KnowledgeDetail.createRoute(itemId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
+            composable(
+                route = MindVaultDestination.DeckAddCards.route,
+                arguments = listOf(navArgument(DECK_ID_ARG) { type = NavType.StringType }),
+            ) {
+                AddCardsScreen(onBackClick = { navController.popBackStack() })
+            }
+            composable(
+                route = MindVaultDestination.Study.route,
+                arguments = listOf(
+                    navArgument(DECK_ID_ARG) { type = NavType.StringType },
+                    navArgument(STUDY_SHUFFLE_ARG) {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
+                ),
+            ) {
+                StudyScreen(onBackClick = { navController.popBackStack() })
             }
             composable(MindVaultDestination.Profile.route) {
                 ProfileScreen(onBackClick = { navController.popBackStack() })

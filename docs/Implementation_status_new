@@ -1,0 +1,138 @@
+# MindVault — Implementation Status
+
+> **Status accuracy rule:** This file is a checkpoint for the human developer and AI tools. Update it from actual repository inspection, supplied code, and build/test output. Do not infer that a feature is implemented just because it appears in the roadmap.
+
+## 1. Current Project Snapshot
+
+- **Product:** MindVault — Android personal knowledge vault.
+- **MVP core features:** Search, Add, Vault, Flashcards.
+- **Technology direction:** Kotlin, Jetpack Compose, Material 3, Navigation Compose, MVVM, Room, Hilt, Coroutines/Flow, Retrofit/OkHttp with kotlinx.serialization for external Search.
+- **Repository inspected for this status:** Source files supplied in conversation; built by the developer (Rucha) on Android Studio Rabbit 1 | 2026.2.1, Windows.
+- **Build status:** `gradlew.bat assembleDebug` succeeds and the app runs on the emulator, including Phase 6 (Entry 10, Flashcards & Decks), which is built (developer-reported). The developer reports the behaviour of Phases 1–5, including 4a (edit/delete), 4b (Vault search, filter, sort) and the interim Search, confirmed (developer-reported). Phase 6 has not been tested.
+- **Test status:** the tests for Phases 2–5 run and pass (developer-reported; output not pasted). The first Phase 5 run had failed to compile because `kotlinx-coroutines-test` was missing; fixed. Phase 6 tests are written (study session, deck and flashcard use cases, five ViewModels, DAO queries) and have not been run.
+- **Last verified commit:** Not tracked in Git yet.
+
+## 2. Implementation Checklist
+
+| Area | Status | Evidence / notes |
+|---|---|---|
+| Android project and Gradle setup | Verified | Builds and installs on an emulator (API 35, x86_64). Phase 5 adds Retrofit, OkHttp, kotlinx.serialization: synced and built (developer-reported). |
+| App theme and reusable UI components | Verified | Light/dark theme confirmed switching with system setting on-device. |
+| Main navigation shell | Verified | All 5 destinations + Add sheet confirmed navigable on-device (Phase 1). Phase 5 adds one route. |
+| Architecture and dependency injection | Verified (developer-reported) | Hilt wiring, `DatabaseModule`, `RepositoryModule` and Phase 5's `SearchProviderModule` all build and run. Phase 6 adds use cases and ViewModels only (built, not tested). |
+| Knowledge data model | Verified | Phase 2 build and tests run by Rucha; output not pasted. |
+| Room database and migrations | Verified | Same as above. No migrations exist yet (schema v1). Phase 5 makes no schema change. |
+| Manual add / view | Verified | Add form and detail view. |
+| Manual edit / delete | Verified (developer-reported) | Entry 7. Edit reuses the Add form; delete asks for confirmation. |
+| Categories | Verified (developer-reported) | Create and pick in the Add form. No category management yet. |
+| Vault search, filter, sorting | Verified (developer-reported) | Entry 8. Search box, type and category filters, 4 sort orders. |
+| Home dashboard | Not started | Home screen is static UI; no real data source. |
+| External Search integration | Verified — **interim version** (developer-reported) | Entry 9. Free Dictionary API behind `DefinitionDataSource`; loading, results, no result, offline and error states. Developer tested it and reports it working perfectly. An emulator log on 2026-10-24 showed a provider outage (HTTP 530) handled without a crash. To be replaced by Search v2 (Wiktionary + Wikipedia), see `docs/SEARCH_V2_REQUIREMENTS.md`. |
+| Save Search result to Vault | Verified — **interim version** (developer-reported) | Entry 9. Direct save, or "Edit first" via the prefilled Add form; duplicate-by-title handling. The save workflow and UI are to be preserved in Search v2. |
+| Default and custom flashcard decks | Built — not tested | Data layer (Phase 2) plus Phase 6 (Entry 10): deck list, create, rename, delete with confirmation, deck screen with counts and progress. The default deck can't be deleted. |
+| Create flashcards from Vault entries | Built — not tested | Entry 10. "Add to flashcards" sheet on the item detail screen (default deck preselected, new deck inline) and a card picker inside each deck (reuses Vault search). Duplicates are prevented by the existing unique index and shown as "Already added". |
+| Add / remove cards in a deck | Built — not tested | Entry 10. Removing asks for confirmation and keeps the Vault item. |
+| Flashcard study mode and progress | Built — not tested | Entry 10. Flip, previous/next, shuffle, session summary. A card counts as reviewed when its answer is first revealed in a pass (review count + 1, last-reviewed time saved). Deck completion = every card reviewed at least once. No scheduling logic: next review, ease and interval are untouched. |
+| Profile and Settings basics | Not started | Profile screen shows only an empty state. |
+| Unit/database/UI tests | Partial | Tests for Phases 2–5 pass (developer-reported). Phase 6 tests (study session, deck and flashcard use cases, ViewModels, DAO queries) are written, not run. No UI (Compose) tests. |
+| Debug/release build | Verified (debug, Phase 1 source) | Release build not attempted. R8 is enabled for release; Retrofit/serialization need a release check. |
+
+## 3. Files Changed
+
+| Date | Task / phase | Files created or modified | Verification |
+|---|---|---|---|
+| — | Phase 1: Project foundation and UI shell | See `docs/CODE_CHANGES.md`, Entry 1. | Verified (built, ran on emulator) |
+| — | Phase 1: Dark mode | See Entry 2. | Verified (theme follows system setting) |
+| 2026-10-17 | Phase 1: Build/run debugging | See B1–B8 below. | **Verified** |
+| — | Phase 2: Data model and Room | See Entry 3. | Verified per developer (output not pasted) |
+| — | Phase 3: Add form and Vault list, with build fixes | Entries 5–6. | Verified (developer-reported) |
+| — | Phase 4a: Edit and delete | Entry 7. | Verified (developer-reported) |
+| — | Phase 4b: Vault search, filter, sort | Entry 8. | Verified (developer-reported) |
+| 2026-10-23 | Phase 5: External Search and save | Entry 9. New: 6 domain files, 5 `data/remote` files, `SearchRepositoryImpl`, `SearchProviderModule`, 4 `feature/search` files, 8 test files, `docs/SEARCH_PROVIDER.md`. Modified: manifest, `libs.versions.toml`, root and app `build.gradle.kts`, `RepositoryModule`, `MindVaultDestination`, `MindVaultNavHost`, `AddKnowledgeViewModel`, `SearchScreen`. | **Verified** (developer-reported): built, feature tested on the emulator, unit tests pass. The first test run failed to compile (missing test dependency); since fixed. |
+| 2026-10-25 | Phase 6: Flashcards & Decks | New: `domain/model` (`DeckSummary`, `DeckResults`, `StudySession`), 11 `domain/usecase` files, `core/ui/components/SecondaryButton.kt`, 12 `feature/flashcards` files, 3 `feature/knowledge` files (`AddToDeckSheet`, `AddToDeckViewModel`, `AddToDeckUiState`). Modified: `MindVaultDestination.kt`, `MindVaultNavHost.kt`, `FlashcardsScreen.kt` (replaced), `KnowledgeDetailScreen.kt` (one action and the sheet). No schema change, no new dependencies. Full list in `docs/CODE_CHANGES.md`, Entry 10. | Built (developer-reported). Not tested: unit tests and manual checks not run yet. |
+
+## 4. What's Working
+
+Confirmed by the developer:
+- App builds and installs; launches on an emulator without crashing.
+- All 5 destinations are reachable; bottom bar reflects the active tab.
+- The Add button opens the Add sheet; Home's top-bar icon opens Profile.
+- System dark/light setting switches the theme.
+- Add form saves; item detail opens (Phase 3, per developer).
+- Interim Search (Phase 5) works end to end: search, results, save, and its unit tests (developer-reported). A provider outage (HTTP 530, seen in an emulator log on 2026-10-24) was handled without a crash.
+
+Not yet confirmed: Phase 6 behaviour (built, not tested), tab state preservation, physical device, rotation, accessibility/contrast, release build.
+
+## 5. Known Bugs and Limitations
+
+| ID | Issue | Status |
+|---|---|---|
+| B1 | `ClassNotFoundException: MainActivity` (file saved empty) | Fixed |
+| B2 | Same exception from a stale install | Fixed (clean, uninstall, rebuild) |
+| B3 | `Unresolved reference: libs` (catalog misnamed) | Fixed |
+| B4 | AGP incompatible with Android Studio | Fixed (updated to Rabbit 1) |
+| B5 | `Expects top level declaration` from a partial paste | Fixed |
+| B6 | Missing `Color.kt` and `Type.kt` | Fixed |
+| B7 | `app/` package folder mismatch | Fixed |
+| B8 | Crash from `bottomBarRoutes` init order | Fixed (`by lazy`) |
+
+Known limitations (not bugs):
+- The current Search is an **interim, primitive version**. Its provider (Free Dictionary API) covers ordinary words well and specialist concepts poorly, is community-run with no service guarantee, and returned HTTP 530 (unreachable) during an outage on 2026-10-24. It is planned to be replaced by Search v2.
+- Search saves one item per title (matched case-insensitively); other senses are added by editing the item.
+- Search text and filters reset when the app process restarts.
+- UI strings are hardcoded; move to `strings.xml` before release.
+- Dark-palette contrast has not been measured.
+- Search recommendations setting, recent searches, and non-English lookups are not built.
+- No settings are functional.
+- Flashcards have no spaced repetition: study order is unreviewed first, then oldest first, or shuffled. Due counts are not shown because nothing schedules cards yet.
+- The shuffle choice is not remembered between sessions (no settings storage yet).
+- Study progress counts a card as reviewed when its answer is revealed; there is no "known / still learning" rating and no mastery statistic.
+
+## 6. Decisions and Open Questions
+
+### Confirmed product decisions
+- MindVault is an Android personal knowledge app; core features are Search, Add, Vault, Flashcards.
+- Users can add knowledge manually and save Search results; saved knowledge is reused across the app.
+- Local-first persistence for the MVP. AI-generated content and cloud sync are out of scope.
+- Package / application ID: `com.mindvault`.
+- Bottom navigation order: Search, Vault, Add (center, opens a sheet), Flashcards, Home. Profile is reached from Home's top bar.
+- Dark mode follows the system setting; no in-app toggle yet.
+- **Search provider (interim): Free Dictionary API** (`api.dictionaryapi.dev`), no key. It sits behind `DefinitionDataSource`; switching steps are in `docs/SEARCH_PROVIDER.md`.
+- **Planned Search v2 (not started):** Wiktionary for words and Wikipedia for concepts, queried in parallel, with All/Words/Concepts filters, autocomplete, ranking, compact expandable result cards, partial-failure handling, and the existing save flow unchanged. Requirements and open questions: `docs/SEARCH_V2_REQUIREMENTS.md`.
+- **Flashcards & Decks (Phase 6, built, not tested):** decks are managed from the Flashcards tab and a deck screen; cards are added from the item detail screen or a picker inside a deck. Study mode takes one snapshot of the deck, with an optional shuffle that keeps your place. Reviewed = answer revealed at least once; deck complete = every card reviewed at least once. Deleting a deck or a card never deletes the Vault item. Any deck, including the default, can be renamed; only deleting the default deck is blocked.
+- Search runs on the keyboard's Search action, not per keystroke.
+- JSON parsing uses kotlinx.serialization (no reflection; R8-safe).
+
+### Dependency versions
+- Documented earlier: AGP 8.7.3, Gradle 8.10.2, compile/target SDK 35.
+- **Observed in supplied files:** AGP 8.9.1, compile/target SDK 36. The Gradle wrapper version was not supplied and is unconfirmed (AGP 8.9 needs a newer Gradle than 8.10.2).
+- Kotlin 2.0.21, KSP 2.0.21-1.0.28, Hilt 2.52, Compose BOM 2024.10.01, Navigation Compose 2.8.4, Room 2.6.1, lifecycle 2.8.7.
+- Added in Phase 5 (synced and built; developer-reported): Retrofit 2.11.0, OkHttp 4.12.0, kotlinx-serialization-json 1.7.3, kotlinx-coroutines-test 1.9.0 (tests only).
+
+### Decisions to record when made
+- Search v2 open questions (meaning of "backend", autocomplete cadence, duplicate rule across words and concepts, where extra fields and source links are stored, licensing/attribution). See `docs/SEARCH_V2_REQUIREMENTS.md`. The interim Free Dictionary API is not intended for release.
+- Default deck behavior in the UI.
+- Review scheduling: simple intervals or a spaced-repetition algorithm.
+- Final design tokens and approved screen references.
+
+## 7. Next Task
+**Recommended next task:** test Phase 6: run `testDebugUnitTest` and `connectedDebugAndroidTest`, and work through `docs/FLASHCARDS_TEST_PLAN.md` on the emulator. Search v2 should start only after its open questions in `docs/SEARCH_V2_REQUIREMENTS.md` are answered.
+
+## 8. Handoff Template for a New AI Conversation
+
+- **Current phase:** Phases 1–5 (including 4a, 4b and the interim Search) built, tested and verified (developer-reported); Phase 6 (Flashcards & Decks) built, not tested. Search v2 is planned, not started.
+- **Exact task:** Test Phase 6: run its unit and instrumented tests and do the manual checks in `docs/FLASHCARDS_TEST_PLAN.md`.
+- **Relevant files to provide:** `PROJECT_BRIEF.md`, `DESIGN_SYSTEM.md`, `ARCHITECTURE.md`, `IMPLEMENTATION_STATUS.md`, `docs/CODE_CHANGES.md`, `docs/SEARCH_PROVIDER.md`, `docs/SEARCH_V2_REQUIREMENTS.md`, plus the source files for the task.
+- **Current build/test result:** Project builds and runs on the emulator; Phase 1–5 behaviour and their tests are confirmed (developer-reported, output not pasted). Phase 6 is built but its tests and manual checks have not been run.
+- **Files changed in the previous task:** See §3 and Entry 9.
+- **Known issue to address:** None reported. Phase 6 is built but untested.
+- **Out of scope for the next task:** AI features, auth, cloud sync, anything not requested.
+
+AI instructions:
+- Treat this file as a status checkpoint, not proof of implementation.
+- Use only files and outputs supplied in the current conversation.
+- Ask for missing context rather than guessing.
+- Make only the changes needed for the specified task.
+- Provide complete changed files or precise patches.
+- State which checks were actually run and which remain unverified.
+- Do not update a status to `Verified` without supporting evidence.

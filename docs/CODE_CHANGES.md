@@ -292,3 +292,112 @@ Undo for delete, bulk delete, Vault filter/sort/search.
 
 ### Not built
 Persisting sort/filter across restarts (needs settings storage), highlighting matched text, multi-select filters.
+
+## Entry 9 — Phase 5: External Search and save
+
+**Status:** Built and run on the emulator (developer-reported). **Interim version:** to be replaced by Search v2 (`docs/SEARCH_V2_REQUIREMENTS.md`).
+
+**Goal:** Search words through the Free Dictionary API, show loading / results / no result / offline / error, save a result to the Vault directly or after editing, and flag results that are already saved. The provider sits behind one interface so it can be swapped (see `docs/SEARCH_PROVIDER.md`).
+
+### Files modified
+| File | Change |
+|---|---|
+| `AndroidManifest.xml` | Added `INTERNET` permission |
+| `gradle/libs.versions.toml` | Added Retrofit 2.11.0, OkHttp 4.12.0, kotlinx-serialization-json 1.7.3, kotlinx-coroutines-test 1.9.0, serialization plugin |
+| `build.gradle.kts` (root) | Registered the serialization plugin (`apply false`) |
+| `app/build.gradle.kts` | Applied the plugin, added Retrofit/OkHttp/serialization dependencies, `testImplementation(libs.kotlinx.coroutines.test)` (needed to run ViewModel tests off the main dispatcher), `testOptions { unitTests.isReturnDefaultValues = true }` so unit tests can run code that calls `Log` |
+| `core/di/RepositoryModule.kt` | Added `SearchRepository` binding |
+| `core/navigation/MindVaultDestination.kt` | Added `AddKnowledgeFromSearch` route and `PREFILL_*_ARG` constants |
+| `core/navigation/MindVaultNavHost.kt` | Search gets view/edit-first callbacks; new prefilled-form route |
+| `feature/knowledge/AddKnowledgeViewModel.kt` | Replaced. Reads prefill arguments into the initial state; unchanged otherwise |
+| `feature/search/SearchScreen.kt` | Replaced. Real states instead of the disabled shell |
+
+### Files created (under `…/mindvault/`)
+| Area | Files |
+|---|---|
+| `domain/model/` | `SearchResult.kt` (models, limits, `limited()`, `toSaveContent()`, `toTitleKey()`), `SearchOutcome.kt` (`SearchOutcome`, `SaveSearchResult`) |
+| `domain/repository/` | `SearchRepository.kt` |
+| `domain/usecase/` | `SearchDefinitionsUseCase.kt`, `SaveSearchResultUseCase.kt`, `ObserveSavedTitlesUseCase.kt` |
+| `data/remote/` | `DefinitionDataSource.kt` (the swap point) |
+| `data/remote/freedictionary/` | `FreeDictionaryApi.kt`, `FreeDictionaryDto.kt`, `FreeDictionaryMapper.kt`, `FreeDictionaryDataSource.kt` |
+| `data/repository/` | `SearchRepositoryImpl.kt` |
+| `core/di/` | `SearchProviderModule.kt` (the only file that names the active provider) |
+| `feature/search/` | `SearchUiState.kt`, `SearchViewModel.kt`, `SearchResultCard.kt` |
+| `app/src/test/…` | `domain/model/SearchResultTest.kt`, `data/remote/freedictionary/FreeDictionaryMapperTest.kt`, `data/repository/SearchRepositoryImplTest.kt`, `domain/usecase/SearchTestSupport.kt` (fakes and builders), `SearchDefinitionsUseCaseTest.kt`, `ObserveSavedTitlesUseCaseTest.kt`, `SaveSearchResultUseCaseTest.kt`, `feature/search/SearchViewModelTest.kt` |
+| `docs/` | `SEARCH_PROVIDER.md` |
+
+### Key decisions
+- **Provider:** Free Dictionary API, no key. Chosen for the MVP; coverage of concepts is poor and it has no service guarantee. Revisit before release.
+- **One result per word.** Entries for the same word are merged. Each card shows at most 4 meanings and 2 definitions per meaning, and the saved definition is exactly what the card shows.
+- **Saved as:** type `WORD`, no category, definition lines like `(noun) text`, first example found.
+- **Duplicates:** matched by title, case-insensitive. The card is derived live from the Vault, so it flips to "Already in your Vault" with a View action as soon as the save lands. `SaveSearchResultUseCase` rechecks with `findByTitle` before saving. Limitation: one saved item per title; add other senses by editing the item.
+- **Save paths:** "Save" saves directly. "Edit first" opens the existing Add form prefilled through route query arguments, so it works after process death. The form counts as unsaved, so back asks to discard.
+- **Search runs on the keyboard's Search action**, not on every keystroke. Clearing the field resets to the idle state.
+- **Error mapping:** `IOException` → offline; empty list → no result; other exceptions → error. 404 from this provider is mapped to "no result" inside its data source.
+- **JSON:** kotlinx.serialization (no reflection, safer under R8, which is enabled for release).
+- `SearchResultCard` uses `Surface` with design tokens because `MindVaultCard.kt` was not reviewed.
+- Strings are hardcoded, as elsewhere. Move them to `strings.xml` before release.
+
+### Observations (docs vs. supplied files)
+- `libs.versions.toml` has AGP 8.9.1 and `app/build.gradle.kts` has compile/target SDK 36, plus release signing and minification. The docs still say AGP 8.7.3 and SDK 35. The supplied files were treated as correct.
+
+### Not built (by design)
+"Search recommendations" setting, recent searches, Search scope filters, languages other than English, creating a flashcard from a result, UI (Compose) tests. The new use-case and ViewModel tests assume `SaveKnowledgeItemUseCase(knowledgeRepository)` as its constructor; if that is wrong, fix `newSaveSearchResultUseCase` in `SearchTestSupport.kt`.
+
+### Follow-up
+This interim Search will later be replaced by Search v2. See `docs/SEARCH_V2_REQUIREMENTS.md` for the requirements and the questions to settle first.
+
+## Entry 10 — Phase 6: Flashcards & Decks
+
+**Status:** Written, not built. Nothing here is verified until a note says so.
+
+**Goal:** Create flashcards from Vault entries; create, view, rename and delete decks; add and remove cards; a study mode with flip, previous/next and shuffle; basic progress and deck completion. All persisted through the existing Phase 2 database and repositories.
+
+### Database, dependencies, setup
+- **No schema change and no migration.** Schema v1 already has decks, flashcards and review states; `MINDVAULT_MIGRATIONS` stays empty. No new DAO queries either: counts reuse `observeCountByDeck` and `observeUnreviewedCountByDeck`.
+- **No new dependencies.**
+- Setup: copy the files to the paths below, then run File > Sync Project with Gradle Files and `gradlew.bat assembleDebug`.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| Area | Files |
+|---|---|
+| `domain/model/` | `DeckSummary.kt` (`DeckSummary`, `DeckDetail`, `DeckOption`), `DeckResults.kt` (`SaveDeckResult`, `DeleteDeckResult`, `AddItemsToDeckResult`), `StudySession.kt` (pure study logic) |
+| `domain/usecase/` | `DeckNameValidator.kt`, `ObserveDeckSummariesUseCase.kt`, `ObserveDeckDetailUseCase.kt`, `ObserveDeckOptionsUseCase.kt`, `CreateDeckUseCase.kt`, `RenameDeckUseCase.kt`, `DeleteDeckUseCase.kt`, `AddItemsToDeckUseCase.kt`, `RemoveCardFromDeckUseCase.kt`, `RecordCardReviewUseCase.kt` |
+| `core/ui/components/` | `SecondaryButton.kt` |
+| `feature/flashcards/` | `DeckFormUiState.kt`, `DeckNameDialog.kt`, `DeckProgress.kt`, `FlashcardsUiState.kt`, `FlashcardsViewModel.kt`, `DeckDetailUiState.kt`, `DeckDetailViewModel.kt`, `DeckDetailScreen.kt`, `AddCardsUiState.kt`, `AddCardsViewModel.kt`, `AddCardsScreen.kt`, `StudyUiState.kt`, `StudyViewModel.kt`, `StudyScreen.kt` |
+| `feature/knowledge/` | `AddToDeckUiState.kt`, `AddToDeckViewModel.kt`, `AddToDeckSheet.kt` |
+
+### Files modified
+| File | Change |
+|---|---|
+| `core/navigation/MindVaultDestination.kt` | `DECK_ID_ARG`, `STUDY_SHUFFLE_ARG`; routes `DeckDetail`, `DeckAddCards`, `Study` (with a boolean `shuffle` argument) |
+| `core/navigation/MindVaultNavHost.kt` | Flashcards tab opens decks; three new routes. Bottom bar stays hidden on deck, picker and study screens (they are not in `bottomBarRoutes`) |
+| `feature/flashcards/FlashcardsScreen.kt` | **Replaced.** Deck list with progress and a "New deck" action instead of the empty shell. New signature: `FlashcardsScreen(onDeckClick, modifier, viewModel)` |
+| `feature/knowledge/KnowledgeDetailScreen.kt` | One new top-bar action ("Add to flashcards"), one state flag, and the sheet. The ViewModel and UI state are unchanged: the sheet's own ViewModel reads the item ID from the same back-stack entry |
+
+### Key decisions
+- **Reviewed means revealed.** The first reveal of a card in a pass saves `reviewCount + 1` and `lastReviewedAt`. Flipping back and forth in a pass doesn't count again. `nextReviewAt`, `easeFactor` and `intervalDays` are left untouched, so "due" counts are deliberately not shown.
+- **Deck completion** = the deck has cards and every card has `reviewCount > 0`. The session summary computes this from the session snapshot, so it never races the database writes.
+- **Study session** is pure logic (`StudySession`) on one snapshot taken when the screen opens, so cards never reshuffle as they get reviewed. Default order: unreviewed first, then oldest first.
+- **Shuffle:** a toggle chip on the study screen, plus a "Shuffle" button on the deck screen that opens study with shuffle on. Toggling mid-session keeps the current card and the ones already passed; only the cards ahead are reordered, and turning it off restores the default order for them. The choice is not persisted (no settings storage yet).
+- **Adding cards:** from the item detail screen via a sheet (default deck preselected; decks that already hold the item show "Already added"; "New deck" inline), or from a picker inside a deck that reuses `ObserveVaultItemsUseCase` and `ApplyVaultQueryUseCase`. The sheet closes only after the database write succeeds.
+- **Deletes:** deleting a deck or removing a card never touches the Vault item; both ask for confirmation and say what is lost. The default deck can't be deleted (hidden in the UI, blocked by the DAO and repository).
+- **Names:** deck names are required, up to 50 characters, unique ignoring case. Duplicates surface from the existing repository exception as "A deck with this name already exists".
+- Strings are hardcoded, as elsewhere. `SecondaryButton` is new because no secondary button existed.
+- `AddMenuSheet` is untouched, so "Create a flashcard" is still not in the Add menu.
+
+### Assumptions to check at build time
+- `AddCardsViewModel` builds `VaultQuery(searchText = ..., sort = VaultSort.A_TO_Z)` and assumes the other `VaultQuery` fields have defaults (the file was not supplied).
+- `KnowledgeItem.id` is used for picker membership; `FlashcardDetail.knowledgeItem` is the Vault item.
+
+### Not built (by design)
+Tests (to follow once the test files are supplied), spaced repetition and self-rating, due counts, persisted shuffle, Home dashboard card stats, "Create a flashcard" in the Add menu, bulk Vault selection, reset deck progress, moving cards between decks.
+
+### Manual checks to run on the emulator
+1. Flashcards tab: the default deck is listed with "No cards yet". Create a deck, try a blank name and a duplicate name.
+2. Open a saved item, tap the cards icon: the default deck is preselected. Add it. Reopen the sheet: the deck shows "Already added".
+3. In a deck: "Add cards" lists the Vault with search; items already in the deck are disabled.
+4. Study: flip by tapping and by the button, go Next and Previous, turn Shuffle on and off mid-session, finish, then "Study again".
+5. Back on the deck screen: reviewed counts and the progress bar updated; reviewing every card shows "Deck complete".
+6. Remove a card (confirm), rename a deck, delete a custom deck (confirm). The default deck has no delete action.
+7. Delete a Vault item that has a card: the card disappears from its deck.
