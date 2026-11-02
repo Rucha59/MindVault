@@ -401,3 +401,74 @@ Tests (to follow once the test files are supplied), spaced repetition and self-r
 5. Back on the deck screen: reviewed counts and the progress bar updated; reviewing every card shows "Deck complete".
 6. Remove a card (confirm), rename a deck, delete a custom deck (confirm). The default deck has no delete action.
 7. Delete a Vault item that has a card: the card disappears from its deck.
+
+## Entry 11 — Phase 7a: Home dashboard
+
+**Status:** Written, not built.
+
+**Goal:** Replace Home's static content with real data from the existing saved items and decks. No schema change, no new dependency, no Profile/Settings work (deferred).
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Purpose |
+|---|---|
+| `domain/model/HomeSummary.kt` | `HomeSummary` and `CategoryCount` |
+| `domain/usecase/HomeSummaryBuilder.kt` | Pure logic: category counts, 5 most recent, in-progress decks, "completed today" check |
+| `domain/usecase/ObserveHomeSummaryUseCase.kt` | Combines `ObserveVaultItemsUseCase`, `ObserveDeckSummariesUseCase` and `FlashcardRepository.observeByDeck` |
+| `feature/home/HomeUiState.kt`, `HomeViewModel.kt` | Loading / Error / Content state |
+| `app/src/test/.../domain/usecase/HomeSummaryBuilderTest.kt` | 5 unit tests (deck-based cases pending `Deck.kt`) |
+
+### Files modified
+| File | Change |
+|---|---|
+| `feature/home/HomeScreen.kt` | Replaced. Existing search shortcut, welcome card and quick actions unchanged. Adds "Continue studying", "Categories", real "Recently saved" with "See all". New params `onItemClick`, `onDeckClick`, `viewModel`. |
+| `core/navigation/MindVaultNavHost.kt` | Home route passes `onItemClick` (detail) and `onDeckClick` (deck detail) |
+
+### Key decisions
+- **Flashcard status:** shows up to 2 decks that are started but not complete (progress + tap opens the deck). If cards exist but none are started, one "Start studying" row opens Flashcards. No "due" count is shown (scheduling is a later feature).
+- **Decks completed today (no new storage):** nothing records when a deck was completed, so a deck counts as completed today when it has cards and **every card's `lastReviewedAt` is today**. Known limits: a finished deck fully re-studied on a later day counts again; the count refreshes on the next data change, not at midnight. An exact count would need a `completedAt` column (Room migration v1→v2, non-destructive) — deferred.
+- **Category counts:** read-only pills, sorted by count; items without a category are grouped as "Uncategorized" (same label as the detail screen).
+- **Recently saved:** 5 newest by `createdAt`; "See all" opens the Vault.
+- Sections with no real data are hidden; a new user sees the existing "Nothing saved yet" state. No streaks.
+- Home reuses the same records as Vault and Flashcards (no copies). `DeckProgress` reused from the flashcards feature.
+
+### Not built
+Profile & Settings (theme preference), due counts, tappable category filters, midnight refresh of "completed today".
+
+## Entry 12 — Phase 7b: Profile & Settings (theme preference)
+
+**Status:** Written, not built.
+
+**Goal:** One working setting: theme (System / Light / Dark) that persists and drives `MindVaultTheme`. Nothing for unimplemented features (no sync, notifications or search-recommendation toggles).
+
+### New dependency (only one)
+`androidx.datastore:datastore-preferences:1.1.1` for a single small preference. Room stays the store for knowledge and review state. Added in `gradle/libs.versions.toml` and `app/build.gradle.kts`. No Room schema change, no migration.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Purpose |
+|---|---|
+| `domain/model/ThemePreference.kt` | Enum SYSTEM / LIGHT / DARK, plus `isDark(systemInDarkTheme)` |
+| `domain/repository/SettingsRepository.kt` | Observe and set the theme preference |
+| `domain/usecase/ObserveThemePreferenceUseCase.kt`, `SetThemePreferenceUseCase.kt` | Use cases |
+| `data/repository/SettingsRepositoryImpl.kt` | DataStore-backed; unreadable file or unknown value falls back to SYSTEM |
+| `core/di/SettingsModule.kt` | Hilt binding |
+| `app/AppThemeViewModel.kt` | Exposes the saved preference to `MainActivity` |
+| `feature/profile/ProfileUiState.kt`, `ProfileViewModel.kt` | Profile state and theme selection; shows an inline error if saving fails |
+| `app/src/test/.../domain/usecase/FakeSettingsRepository.kt`, `ThemePreferenceTest.kt` | 4 unit tests |
+
+### Files modified
+| File | Change |
+|---|---|
+| `app/MainActivity.kt` | Replaced. Reads the preference, passes `darkTheme` to `MindVaultTheme`, and re-applies edge-to-edge bar styles so status/navigation icons match the chosen theme |
+| `feature/profile/ProfileScreen.kt` | Replaced. "Appearance" card with three radio rows; same top bar and back behavior |
+| `gradle/libs.versions.toml`, `app/build.gradle.kts` | DataStore entries |
+
+### Key decisions
+- No navigation change: Profile is still opened from Home's top bar.
+- The app can show the system theme for a moment at cold start before the saved choice loads (initial value is SYSTEM). Fix later with a splash hold if it is noticeable.
+- The launch window background (`values-night/themes.xml`) still follows the system setting.
+- Failed saves show an inline message; the selection is never shown as saved until DataStore confirms (the radio follows the stored value).
+- ViewModel tests are not included: the version catalog has no `kotlinx-coroutines-test` entry, so tests use `runBlocking` on the use cases.
+- Remembering the study-mode shuffle choice was skipped (optional in the brief); can be added as one more DataStore key.
+
+### Not built
+Shuffle persistence, in-app language or notification settings, search-recommendation toggle.
