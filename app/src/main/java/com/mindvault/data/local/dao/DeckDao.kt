@@ -27,4 +27,12 @@ interface DeckDao {
 
     @Query("SELECT * FROM decks ORDER BY isDefault DESC, name")
     fun observeAll(): Flow<List<DeckEntity>>
+
+    /** Sync (Phase C2). The name column is NOCASE, so this comparison is case-insensitive. */
+    @Query("SELECT * FROM decks WHERE name = :name LIMIT 1")
+    suspend fun findByName(name: String): DeckEntity?
+
+    /** Sync (Phase C2): the first full upload reads every row once. */
+    @Query("SELECT * FROM decks")
+    suspend fun getAll(): List<DeckEntity>
 }

@@ -17,4 +17,8 @@ interface ReviewStateDao {
 
     @Query("SELECT * FROM review_states WHERE flashcardId = :flashcardId")
     fun observeByFlashcardId(flashcardId: String): Flow<ReviewStateEntity?>
+
+    /** Sync (Phase C2): the first full upload reads every row once. */
+    @Query("SELECT * FROM review_states")
+    suspend fun getAll(): List<ReviewStateEntity>
 }

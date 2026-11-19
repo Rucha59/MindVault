@@ -13,4 +13,6 @@ data class CategoryEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(collate = ColumnInfo.NOCASE) val name: String,
     val createdAt: Long, // UTC epoch millis
+    /** Last create or rename, UTC epoch millis. Decides sync conflicts. Added in schema v2. */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )

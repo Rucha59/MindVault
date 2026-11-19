@@ -23,13 +23,15 @@ internal fun ReviewStateEntity.toDomain() = ReviewState(
     intervalDays = intervalDays,
 )
 
-internal fun ReviewState.toEntity() = ReviewStateEntity(
+/** The domain ReviewState has no updatedAt; repositories pass the real save time when they write. */
+internal fun ReviewState.toEntity(updatedAt: Long = lastReviewedAt ?: nextReviewAt) = ReviewStateEntity(
     flashcardId = flashcardId,
     lastReviewedAt = lastReviewedAt,
     nextReviewAt = nextReviewAt,
     reviewCount = reviewCount,
     easeFactor = easeFactor,
     intervalDays = intervalDays,
+    updatedAt = updatedAt,
 )
 
 internal fun FlashcardWithDetails.toDomain() = FlashcardDetail(

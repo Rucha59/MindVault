@@ -3,10 +3,11 @@ package com.mindvault.data.repository
 import androidx.room.withTransaction
 import com.mindvault.core.util.newId
 import com.mindvault.core.util.nowMillis
-import com.mindvault.data.local.dao.FlashcardDao
-import com.mindvault.data.local.dao.ReviewStateDao
-import com.mindvault.data.local.database.MindVaultDatabase
+import com.mindvault.data.local.database.ActiveDatabase
 import com.mindvault.data.local.entity.FlashcardEntity
+import com.mindvault.data.local.entity.SyncEntityType
+import com.mindvault.data.local.entity.SyncOperation
+import com.mindvault.data.local.entity.outboxEntry
 import com.mindvault.data.mapper.toDomain
 import com.mindvault.data.mapper.toEntity
 import com.mindvault.domain.model.AddToDeckResult
@@ -20,31 +21,36 @@ import kotlinx.coroutines.flow.map
 
 @Singleton
 class FlashcardRepositoryImpl @Inject constructor(
-    private val database: MindVaultDatabase,
-    private val flashcardDao: FlashcardDao,
-    private val reviewStateDao: ReviewStateDao,
+    private val active: ActiveDatabase,
 ) : FlashcardRepository {
 
     override fun observeByDeck(deckId: String): Flow<List<FlashcardDetail>> =
-        flashcardDao.observeByDeck(deckId).map { list -> list.map { it.toDomain() } }
+        active.observe { db -> db.flashcardDao().observeByDeck(deckId) }
+            .map { list -> list.map { it.toDomain() } }
 
     override fun observeDue(deckId: String, now: Long): Flow<List<FlashcardDetail>> =
-        flashcardDao.observeDue(deckId, now).map { list -> list.map { it.toDomain() } }
+        active.observe { db -> db.flashcardDao().observeDue(deckId, now) }
+            .map { list -> list.map { it.toDomain() } }
 
     override fun observeCountByDeck(deckId: String): Flow<Int> =
-        flashcardDao.observeCountByDeck(deckId)
+        active.observe { db -> db.flashcardDao().observeCountByDeck(deckId) }
 
     override fun observeUnreviewedCountByDeck(deckId: String): Flow<Int> =
-        flashcardDao.observeUnreviewedCountByDeck(deckId)
+        active.observe { db -> db.flashcardDao().observeUnreviewedCountByDeck(deckId) }
 
     override fun observeDueCountByDeck(deckId: String, now: Long): Flow<Int> =
-        flashcardDao.observeDueCountByDeck(deckId, now)
+        active.observe { db -> db.flashcardDao().observeDueCountByDeck(deckId, now) }
 
     override fun observeDeckIdsContaining(knowledgeItemId: String): Flow<List<String>> =
-        flashcardDao.observeDeckIdsContaining(knowledgeItemId)
+        active.observe { db -> db.flashcardDao().observeDeckIdsContaining(knowledgeItemId) }
 
-    override suspend fun addToDeck(knowledgeItemId: String, deckId: String): AddToDeckResult =
-        database.withTransaction {
+    override suspend fun addToDeck(knowledgeItemId: String, deckId: String): AddToDeckResult {
+        // One database for the whole transaction, even if the account changes meanwhile.
+        val db = active.current
+        val flashcardDao = db.flashcardDao()
+        val reviewStateDao = db.reviewStateDao()
+        val outbox = db.syncOutboxDao()
+        return db.withTransaction {
             val card = FlashcardEntity(
                 id = newId(),
                 knowledgeItemId = knowledgeItemId,
@@ -54,16 +60,39 @@ class FlashcardRepositoryImpl @Inject constructor(
             if (flashcardDao.insert(card) == -1L) {
                 AddToDeckResult.AlreadyInDeck
             } else {
-                reviewStateDao.upsert(ReviewState.initial(card.id, card.createdAt).toEntity())
+                reviewStateDao.upsert(
+                    ReviewState.initial(card.id, card.createdAt).toEntity(updatedAt = card.createdAt),
+                )
+                outbox.upsert(outboxEntry(SyncEntityType.FLASHCARD, card.id, SyncOperation.UPSERT, card.createdAt))
+                outbox.upsert(outboxEntry(SyncEntityType.REVIEW_STATE, card.id, SyncOperation.UPSERT, card.createdAt))
                 AddToDeckResult.Added(card.toDomain())
             }
         }
+    }
 
-    override suspend fun removeFromDeck(flashcardId: String) = flashcardDao.deleteById(flashcardId)
+    /** The review state goes with the card (database cascade); only the card's deletion is recorded for sync. */
+    override suspend fun removeFromDeck(flashcardId: String) {
+        val db = active.current
+        db.withTransaction {
+            db.flashcardDao().deleteById(flashcardId)
+            db.syncOutboxDao().upsert(
+                outboxEntry(SyncEntityType.FLASHCARD, flashcardId, SyncOperation.DELETE, nowMillis()),
+            )
+        }
+    }
 
     override suspend fun getReviewState(flashcardId: String): ReviewState? =
-        reviewStateDao.getByFlashcardId(flashcardId)?.toDomain()
+        active.current.reviewStateDao().getByFlashcardId(flashcardId)?.toDomain()
 
-    override suspend fun saveReviewState(state: ReviewState) =
-        reviewStateDao.upsert(state.toEntity())
+    override suspend fun saveReviewState(state: ReviewState) {
+        val db = active.current
+        db.withTransaction {
+            val dao = db.reviewStateDao()
+            val updatedAt = nextUpdatedAt(dao.getByFlashcardId(state.flashcardId)?.updatedAt ?: 0L)
+            dao.upsert(state.toEntity(updatedAt = updatedAt))
+            db.syncOutboxDao().upsert(
+                outboxEntry(SyncEntityType.REVIEW_STATE, state.flashcardId, SyncOperation.UPSERT, updatedAt),
+            )
+        }
+    }
 }

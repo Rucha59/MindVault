@@ -21,3 +21,8 @@
 #-renamesourcefileattribute SourceFile
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# Phase A (Supabase / Ktor): warnings only. Release build with accounts is UNVERIFIED until you run it.
+-dontwarn org.slf4j.**
+-dontwarn java.lang.management.**
+-dontwarn io.ktor.**

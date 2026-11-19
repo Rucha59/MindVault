@@ -1,5 +1,6 @@
 package com.mindvault.app
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,16 +14,22 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mindvault.core.navigation.MindVaultNavHost
 import com.mindvault.core.theme.MindVaultTheme
+import com.mindvault.data.auth.AuthDeepLinkHandler
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val themeViewModel: AppThemeViewModel by viewModels()
 
+    @Inject lateinit var authDeepLinkHandler: AuthDeepLinkHandler
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Only on a fresh launch: after rotation the same intent would be handled twice.
+        if (savedInstanceState == null) authDeepLinkHandler.handle(intent)
         setContent {
             val preference by themeViewModel.themePreference.collectAsStateWithLifecycle()
             val darkTheme = preference.isDark(isSystemInDarkTheme())
@@ -44,5 +51,11 @@ class MainActivity : ComponentActivity() {
                 MindVaultNavHost()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        authDeepLinkHandler.handle(intent)
     }
 }

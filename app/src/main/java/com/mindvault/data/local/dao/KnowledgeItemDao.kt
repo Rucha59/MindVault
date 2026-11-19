@@ -29,4 +29,13 @@ interface KnowledgeItemDao {
 
     @Query("SELECT * FROM knowledge_items WHERE title = :title COLLATE NOCASE LIMIT 1")
     suspend fun findByTitle(title: String): KnowledgeItemEntity?
+
+    /** Sync (Phase C2): the first full upload reads every row once. */
+    @Query("SELECT * FROM knowledge_items")
+    suspend fun getAll(): List<KnowledgeItemEntity>
+
+    /** Sync (Phase C2): used when two same-named categories are merged. */
+    @Query("SELECT * FROM knowledge_items WHERE categoryId = :categoryId")
+    suspend fun getByCategory(categoryId: String): List<KnowledgeItemEntity>
+
 }

@@ -36,4 +36,6 @@ internal fun KnowledgeItem.toEntity() = KnowledgeItemEntity(
 
 internal fun CategoryEntity.toDomain() = Category(id = id, name = name, createdAt = createdAt)
 
-internal fun Category.toEntity() = CategoryEntity(id = id, name = name, createdAt = createdAt)
+/** The domain Category has no updatedAt; repositories pass the real value when they write. */
+internal fun Category.toEntity(updatedAt: Long = createdAt) =
+    CategoryEntity(id = id, name = name, createdAt = createdAt, updatedAt = updatedAt)

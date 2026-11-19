@@ -8,6 +8,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.VisualTransformation
 import com.mindvault.core.theme.MindVaultColors
 import com.mindvault.core.theme.ShapeMedium
 
@@ -32,13 +33,17 @@ fun MindVaultTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingIcon: (@Composable () -> Unit)? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     val message = errorText ?: supportingText
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
         readOnly = readOnly,
+        visualTransformation = visualTransformation,
         label = { Text(label) },
         leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,

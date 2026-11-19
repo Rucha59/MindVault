@@ -1,5 +1,6 @@
 package com.mindvault.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -24,4 +25,6 @@ data class ReviewStateEntity(
     val reviewCount: Int,
     val easeFactor: Double,
     val intervalDays: Int,
+    /** Last time this state was saved, UTC epoch millis. Decides sync conflicts. Added in schema v2. */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
 )

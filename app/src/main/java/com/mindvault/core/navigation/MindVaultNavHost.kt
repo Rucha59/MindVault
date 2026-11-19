@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import com.mindvault.core.theme.MindVaultColors
 import com.mindvault.core.ui.components.AddMenuSheet
 import com.mindvault.core.ui.components.MindVaultBottomBar
+import com.mindvault.feature.auth.AuthScreen
 import com.mindvault.feature.flashcards.AddCardsScreen
 import com.mindvault.feature.flashcards.DeckDetailScreen
 import com.mindvault.feature.flashcards.FlashcardsScreen
@@ -31,6 +32,11 @@ import com.mindvault.feature.vault.VaultScreen
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.mindvault.feature.knowledge.KnowledgeDetailScreen
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mindvault.app.AppSessionViewModel
 private const val TransitionMillis = 150
 
 @Composable
@@ -39,6 +45,21 @@ fun MindVaultNavHost() {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     var showAddMenu by rememberSaveable { mutableStateOf(false) }
+    val sessionViewModel: AppSessionViewModel = hiltViewModel()
+    val dataOwner by sessionViewModel.owner.collectAsStateWithLifecycle()
+    var handledOwner by remember { mutableStateOf(dataOwner) }
+    // A different vault (another account, or guest) is now active: go to Home with a clean history and
+    // drop the saved tab states, so no screen keeps filters or state from the previous account.
+    LaunchedEffect(dataOwner) {
+        if (dataOwner != handledOwner) {
+            handledOwner = dataOwner
+            showAddMenu = false
+            navController.navigate(MindVaultDestination.Home.route) {
+                popUpTo(navController.graph.id) { inclusive = true }
+            }
+            MindVaultDestination.bottomBarRoutes.forEach { navController.clearBackStack(it) }
+        }
+    }
 
     // Switching between main destinations preserves each destination state.
     fun navigateToMain(destination: MindVaultDestination) {
@@ -91,7 +112,7 @@ fun MindVaultNavHost() {
                             launchSingleTop = true
                         }
                     },
-                    )
+                )
             }
             composable(MindVaultDestination.Search.route) {
                 SearchScreen(
@@ -169,7 +190,14 @@ fun MindVaultNavHost() {
                 StudyScreen(onBackClick = { navController.popBackStack() })
             }
             composable(MindVaultDestination.Profile.route) {
-                ProfileScreen(onBackClick = { navController.popBackStack() })
+                ProfileScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onSignInClick = { navigateTo(MindVaultDestination.Auth) },
+                )
+            }
+            composable(MindVaultDestination.Auth.route) {
+                // Signing in changes the vault and resets navigation to Home; only pop if there is somewhere to go back to.
+                AuthScreen(onClose = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
             }
             composable(MindVaultDestination.AddKnowledge.route) {
                 AddKnowledgeScreen(onBackClick = { navController.popBackStack() })

@@ -27,4 +27,8 @@ interface CategoryDao {
 
     @Query("SELECT * FROM categories ORDER BY name")
     fun observeAll(): Flow<List<CategoryEntity>>
+
+    /** Sync (Phase C2): the first full upload reads every row once. */
+    @Query("SELECT * FROM categories")
+    suspend fun getAll(): List<CategoryEntity>
 }

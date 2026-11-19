@@ -15,6 +15,13 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+// Supabase URL and anon key live in local.properties (git-ignored). Never the service_role key.
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+fun buildConfigString(value: String): String = "\"" + value.trim().replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "com.mindvault"
     compileSdk = 36
@@ -26,6 +33,14 @@ android {
         versionCode = 1 // must increase with every Play upload
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Blank values are allowed: the app then runs in guest-only mode and hides sign-in.
+        buildConfigField("String", "SUPABASE_URL", buildConfigString(localProperties.getProperty("supabase.url", "")))
+        buildConfigField("String", "SUPABASE_ANON_KEY", buildConfigString(localProperties.getProperty("supabase.anonKey", "")))
+        // Google OAuth *Web* client ID (public). Never the client secret. Blank hides the Google button.
+        // Email/password sign-in stays in the code but hidden until real email delivery (custom SMTP) exists.
+        buildConfigField("boolean", "AUTH_EMAIL_ENABLED", localProperties.getProperty("auth.emailEnabled", "false").trim().toBoolean().toString())
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", buildConfigString(localProperties.getProperty("google.webClientId", "")))
     }
 
     signingConfigs {
@@ -62,6 +77,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     testOptions { unitTests.isReturnDefaultValues = true }
 
@@ -77,6 +93,9 @@ ksp {
 }
 
 dependencies {
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.kotlinx.serialization)
     implementation(libs.okhttp)
@@ -101,6 +120,18 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    // Accounts (Phase A): Supabase Auth with the OkHttp Ktor engine (reuses the project's OkHttp 4.12).
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+    // Phase A3: only used to call the delete_my_account database function (sync in Phase C reuses it).
+    implementation(libs.supabase.postgrest)
+    implementation(libs.ktor.client.okhttp)
+
+    // Google sign-in (Phase A2): Credential Manager gets a Google ID token, which Supabase verifies.
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)

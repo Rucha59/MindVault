@@ -56,4 +56,14 @@ interface FlashcardDao {
         """
     )
     fun observeDueCountByDeck(deckId: String, now: Long): Flow<Int>
+
+    /** Sync (Phase C2). */
+    @Query("SELECT * FROM flashcards")
+    suspend fun getAll(): List<FlashcardEntity>
+
+    @Query("SELECT * FROM flashcards WHERE id = :id")
+    suspend fun getById(id: String): FlashcardEntity?
+
+    @Query("SELECT * FROM flashcards WHERE knowledgeItemId = :knowledgeItemId AND deckId = :deckId LIMIT 1")
+    suspend fun findByItemAndDeck(knowledgeItemId: String, deckId: String): FlashcardEntity?
 }

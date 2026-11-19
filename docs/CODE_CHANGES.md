@@ -472,3 +472,287 @@ Profile & Settings (theme preference), due counts, tappable category filters, mi
 
 ### Not built
 Shuffle persistence, in-app language or notification settings, search-recommendation toggle.
+
+### Entry 13 — Phase A1a: Supabase Auth foundation (no UI yet)
+
+Status: Written, not built.
+
+Goal: Email sign-up / sign-in / sign-out, encrypted persistent session with automatic refresh, guest mode as "signed out". Backend, DI, config and tests only. UI and navigation wiring follow in A1b. No cloud sync, no per-user data, no Google sign-in (A2).
+
+New dependencies (verified against the supplied catalog by reading supabase-kt's own version files, not by building)
+Library	Version	Why
+io.github.jan-tennert.supabase:bom + auth-kt	3.0.2	Supabase Auth. 3.0.2 is built with Kotlin 2.0.21 and Ktor 3.0.1, matching this project. 3.0.3+ is built with Kotlin 2.1+; 3.7.0 with Kotlin 2.4.
+io.ktor:ktor-client-okhttp	3.0.1	HTTP engine; reuses OkHttp 4.12.0.
+Gradle sync is the real proof of resolution. If a version fails to resolve, report the error.
+Files modified
+File	Change
+gradle/libs.versions.toml	supabase, ktor versions and three libraries
+app/build.gradle.kts	Reads supabase.url / supabase.anonKey from local.properties into BuildConfig; buildConfig = true; three dependencies
+app/src/main/AndroidManifest.xml	launchMode="singleTop"; deep-link filter mindvault://auth-callback; backup rules
+app/MainActivity.kt	Injects AuthDeepLinkHandler; handles links in onCreate and onNewIntent
+app/proguard-rules.pro	-dontwarn for Ktor/slf4j/management
+Files created (under …/mindvault/)
+
+domain/model/AuthModels.kt, domain/repository/AuthRepository.kt, domain/usecase/{AuthValidator,ObserveSessionStateUseCase,SignInWithEmailUseCase,SignUpWithEmailUseCase,SignOutUseCase}.kt, data/auth/{AuthConfig,EncryptedSessionManager,AuthRepositoryImpl,AuthDeepLinkHandler}.kt, core/di/AuthModule.kt; res/xml/{backup_rules,data_extraction_rules}.xml; tests AuthValidatorTest.kt, AuthUseCasesTest.kt; docs/AUTH_SETUP.md.
+
+Key decisions
+Guest mode = SessionState.SignedOut. No gate; sign-in is optional and opens from Profile (A1b).
+No keys → guest-only build. Blank URL/key: accounts hidden, nothing crashes.
+Session stored encrypted (AES-256-GCM, Android Keystore) instead of the library's plain SharedPreferences; undecryptable data is discarded (user signs in again); file excluded from backup.
+PKCE for email links, so a second app registering the same custom scheme cannot steal a session. Limit: a link opened on a different device than the one that signed up cannot complete; user then just signs in.
+No account enumeration: sign-up for an existing address returns the same "check your email" outcome; sign-in failure is a generic "incorrect email or password".
+Password rules: sign-up 8–72 bytes; sign-in only requires non-empty. Email trimmed and lowercased; password never altered.
+Expired session (SessionState.Expired) is separate from signed out; offline refresh failure keeps the user signed in with needsRefresh = true.
+Sign out always ends the local session, even when the server is unreachable. Phase A sign-out does not touch local data (Phase B adds that).
+Auth types stay in data/auth and core/di; MainActivity only sees AuthDeepLinkHandler.
+Known limitation until Phase B
+
+A signed-in user still sees the same local (guest) vault. Do not release in this state.
+
+Likely compile-fix spots (written against the library from memory of its API)
+
+AuthRepositoryImpl.toAuthError() (error-code names), SessionStatus subclasses, clearSession(), AuthDeepLinkHandler import of handleDeeplinks.
+
+Not built
+
+Sign-in/up screens, Profile account section, navigation, Google sign-in, password reset UI, RLS/SQL (none needed yet), sync.
+
+### Entry 14 — Phase A1b: Sign in / Create account screen
+
+Status: Written, not built. Screen not yet reachable: navigation wiring waits for MindVaultDestination.kt, MindVaultNavHost.kt and the Profile files.
+
+Files created (under …/mindvault/)
+
+domain/usecase/IsAuthAvailableUseCase.kt, feature/auth/AuthUiState.kt, AuthViewModel.kt, AuthScreen.kt.
+
+Key decisions
+One screen, two modes (Sign in / Create account). Email + password, show/hide password, inline field errors, one form-level error, spinner on submit, double submit blocked, typed input kept on failure (password cleared only on mode switch and after sign-up).
+After sign-up with confirmation on: "Check your email" panel (same message whether or not the address exists).
+Closes itself when the session becomes signed-in (also when the email link is opened while the screen is showing).
+"Continue without an account" keeps guest mode one tap away.
+No Google button, no "Forgot password" yet (A2 / D2): nothing is shown that does not work.
+Uses Material 3 theme values only (scheme colors, typography); corner radii are literals (12 / 16 dp) pending the token files. Strings hardcoded, as elsewhere.
+No ViewModel test: the version catalog has no kotlinx-coroutines-test.
+
+Entry 15 — Google-only sign-in (email hidden by a flag) and in-app account deletion
+
+Status: Written, not built.
+
+What changed
+Google-only for now. Email/password code stays but is hidden by a build flag auth.emailEnabled (default false). With the flag off, the sign-in page shows only "Continue with Google" and "Continue without an account". The repository also refuses email calls when the flag is off, so nothing can bypass the UI. To bring email back later: set auth.emailEnabled=true in local.properties once custom SMTP works.
+Delete account (Profile → Account → "Delete account"): confirmation dialog that explains the effect and requires typing DELETE. It calls the database function delete_my_account (SQL in docs/supabase_delete_account.sql) through supabase-kt Postgrest, then ends the local session. Failures show a message and keep the user signed in. Items saved on this device are not deleted.
+New dependency
+
+io.github.jan-tennert.supabase:postgrest-kt (version from the existing 3.0.2 BOM). Used only for the delete call now; sync in Phase C reuses it.
+
+Files modified
+
+gradle/libs.versions.toml, app/build.gradle.kts (AUTH_EMAIL_ENABLED, postgrest), core/di/AuthModule.kt (installs Postgrest, passes the flag), data/auth/AuthConfig.kt, data/auth/AuthRepositoryImpl.kt (deleteAccount, isEmailSignInEnabled, email guard), domain/repository/AuthRepository.kt, feature/auth/{AuthUiState,AuthViewModel,AuthScreen}.kt, feature/profile/{ProfileScreen,Profileuistate,Profileviewmodel}.kt, AuthUseCasesTest.kt.
+
+Files created
+
+domain/usecase/{DeleteAccountUseCase,IsEmailSignInEnabledUseCase}.kt, docs/supabase_delete_account.sql.
+
+Decisions and limits
+Deleting an account does not delete data stored on the device (the data is not tied to the account until Phase B). The dialog says so.
+The SQL function is security definer, deletes only auth.uid(), and is executable only by signed-in users.
+Still required for Play, not built: a public web page where people can request account deletion, and the privacy policy page (Phase D3).
+Password reset is no longer needed while email is off (Phase D2 postponed).
+
+## Entry 16 — Phase B: per-account local data and user switching
+
+**Status:** Written, not built.
+
+**Goal:** Each signed-in account sees only its own on-device vault; guests keep the existing vault; switching accounts never shows another account's items.
+
+### Database and migration impact
+- No schema change, no migration. `MindVaultDatabase` stays at version 1, `app/schemas/1.json` is unchanged, `MINDVAULT_MIGRATIONS` stays empty (Room's schema check would fail at launch if the schema had changed).
+- Guest vault is still `mindvault.db` in the normal databases folder. Nothing is copied, moved or rewritten.
+- Each account gets `no_backup/users/mindvault_<userId>.db`, opened by absolute path, with the same schema and its own seeded default deck (`default-deck`). Android never backs up `no_backup/`.
+
+### How it works
+- `ActiveDatabase` (new) owns the open database. Session SignedIn -> that account's vault; SignedOut -> guest vault; Loading and Expired keep the current vault.
+- `ActiveOwnerStore` (new) remembers the last open vault (a plain user ID) so the right vault opens at app start.
+- `AccountDataRepositoryImpl` (new) follows `AuthRepository.observeSessionState()` from `MindVaultApp.onCreate` and calls `ActiveDatabase.switchTo`.
+- The four Room repositories use `ActiveDatabase`: one-off calls take `active.current` once (read-then-write and the flashcard transaction use a single database); observed flows use `active.observe { }` (`flatMapLatest` on the owner).
+- `MindVaultNavHost` watches the owner through `AppSessionViewModel`; any change navigates to Home, pops the whole back stack and clears the saved tab states. `AuthScreen` close only pops when there is a previous entry.
+- `DeleteAccountUseCase` deletes the account's local vault after the server deletion succeeds: switches to guest, closes and deletes the files. The guest vault is never touched.
+- Theme stays global (DataStore).
+- `backup_rules.xml` was still the Android Studio sample, so `mindvault_auth` was backed up on API 26-30 (Entry 13 said it was excluded). Both XML files now exclude `mindvault_auth.xml` and `mindvault_active_owner.xml`.
+
+### Files modified
+`data/repository/{Knowledge,Category,Deck,Flashcard}RepositoryImpl.kt` (replaced), `domain/usecase/DeleteAccountUseCase.kt` (replaced), `app/MindVaultApp.kt` (replaced), `core/navigation/MindVaultNavHost.kt`, `feature/profile/ProfileScreen.kt` (dialog wording only), `res/xml/backup_rules.xml`, `res/xml/data_extraction_rules.xml`.
+
+### Files created
+`domain/model/DataOwner.kt`, `domain/repository/AccountDataRepository.kt`, `domain/usecase/ObserveDataOwnerUseCase.kt`, `data/local/database/{ActiveDatabase,ActiveOwnerStore}.kt`, `data/repository/AccountDataRepositoryImpl.kt`, `core/di/AccountDataModule.kt`, `app/AppSessionViewModel.kt`.
+
+### File deleted
+`core/di/DatabaseModule.kt`. The database and DAOs are intentionally no longer injectable. A "missing binding" build error for them means a file not yet reviewed still injects one.
+
+### Decisions
+1. Sign-out keeps the account's vault on the device; it reopens on the next sign-in. Phase C adds "clear after a confirmed sync".
+2. Delete account also deletes that account's local vault, not the guest vault.
+3. A new account starts empty; guest items stay in the guest vault (Phase D1 will offer to import).
+4. Any account change returns to Home and clears history. Sign-out then sign-in only; no direct account switching.
+5. Theme is global. Default deck ID stays `default-deck` in every vault.
+6. Phase B changes no tables, so there is no Room migration. Isolation is covered by `ActiveDatabaseTest` (using its own test files) and by a manual check that existing guest data is intact after installing over the previous build.
+
+### Known limits
+- Until Phase C, an account's data exists only on this phone: uninstalling or clearing app data deletes it.
+- At cold start the last account's vault opens while the session loads. If the session turns out to be dead, the app switches to guest a moment later.
+- While the session is Expired in the same process, the previous account's vault stays open; after a restart the app starts in guest mode and that vault stays hidden until the user signs in again.
+- A vault belongs to a Supabase user ID. Deleting an account and signing in with the same Google account creates a new ID and an empty vault.
+- Opened vaults stay open until deleted (a handful at most). If deleting a vault file fails, a leftover file is never reused.
+- Account vault file names replace any character outside A-Z, a-z, 0-9, `_` and `-` with `_`; Supabase IDs are UUIDs and unaffected.
+
+### Built (developer-reported)
+`ActiveDatabaseTest` and the test updates (waiting for the test files), clearing the local vault after sync, guest-to-account import.
+
+## Entry 17 — Phase C1: sync foundation (cloud schema, Room v2, change recording)
+
+**Status:** Written, not built. The SQL file was run against a local PostgreSQL 16 with a stubbed `auth` schema (not against Supabase). The migration SQL was run against a SQLite database built from `app/schemas/.../1.json`. The Kotlin has not been compiled and the instrumented tests have not been run.
+
+**Goal:** Everything the sync engine (C2) needs, with no sync running yet: cloud tables with Row Level Security and push/pull functions, a non-destructive Room v1 -> v2 migration, and every local write recorded in a pending-changes table in the same transaction. No network calls, no WorkManager, no UI.
+
+### Decisions (confirmed 2026-11-07)
+1. Conflicts: the newer `updatedAt` wins for a whole row (client time, clamped to server time + 5 minutes). Local edits are always at least 1 ms newer than the version they replace, so a device clock moved backwards cannot lose edits.
+2. A deletion wins over a concurrent edit. A card for a deleted item or deck is not created.
+3. Same name on two devices: categories merge (older kept, items re-pointed); the later deck is renamed "Name (2)". Duplicate cards for the same item and deck: the earlier card is kept. The app resolves these after pulling (C2); the cloud has no unique indexes on names or (item, deck).
+4. Sign-out: final sync, then delete the account's local vault only if everything is uploaded; otherwise keep it and warn (C3).
+5. Sync runs on app open, a few seconds after a change, and about every 6 hours, on any network (C3). Status is shown only in the Profile account card (C3).
+6. Sync metadata lives in two new tables, not extra columns on every entity.
+
+### Room schema v1 -> v2 (migration impact)
+- `MIGRATION_1_2` only adds. No row is moved, rewritten or deleted.
+  - `categories.updatedAt` and `review_states.updatedAt` (`INTEGER NOT NULL DEFAULT 0`), filled from the best timestamp each row has: category `createdAt`; review state `lastReviewedAt`, or `nextReviewAt` for a card never reviewed.
+  - New empty tables `sync_outbox` and `sync_state`.
+- It runs on the guest vault and on every account vault the first time each is opened (`ActiveDatabase` already passes `MINDVAULT_MIGRATIONS`). Guest data gains two filled columns and two empty tables; the guest vault never syncs.
+- The new columns carry `@ColumnInfo(defaultValue = "0")` so a migrated database and a freshly created one have the same schema.
+- `MindVaultDatabase` version is now 2. Building the app exports `app/schemas/com.mindvault.data.local.database.MindVaultDatabase/2.json`: **commit it**; the migration test needs it.
+- New account vaults seed the default deck with `updatedAt = 0` (was creation time) so an untouched default deck never overrides one renamed on another device. Renaming it sets a real `updatedAt`.
+
+### What is recorded for sync
+`sync_outbox` holds one row per entity (type, id, operation, changedAt); a newer change replaces an older one (a delete replaces a pending edit). Written inside the same `withTransaction` as the change, so a failed write leaves no entry.
+
+| Action | Recorded |
+|---|---|
+| Item create / edit | KNOWLEDGE_ITEM upsert |
+| Item delete | KNOWLEDGE_ITEM delete (cloud removes its cards and review states) |
+| Category create / rename | CATEGORY upsert |
+| Category delete | CATEGORY delete (cloud clears the category on its items, keeping their `updatedAt`) |
+| Deck create / rename | DECK upsert |
+| Deck delete | DECK delete (cloud removes its cards) |
+| Add card | FLASHCARD upsert + REVIEW_STATE upsert |
+| Remove card | FLASHCARD delete |
+| Save review state | REVIEW_STATE upsert, `updatedAt` = save time |
+
+Rows created before C1 have no entry. The first sync of an account vault will upload everything (C2).
+Deleting an item, deck or category removes its dependants locally by database cascade; pending entries for those dependants may remain and the engine must drop an upsert whose row no longer exists (C2).
+
+### Cloud (docs/supabase_sync_schema.sql — run in the dev project first, then prod)
+- Tables: `categories`, `decks`, `knowledge_items`, `flashcards`, `review_states`. Primary key `(user_id, id)`, `user_id` references `auth.users` with ON DELETE CASCADE (so `delete_my_account()` also removes cloud data). Timestamps are `timestamptz`.
+- RLS: signed-in users can only SELECT their own rows. There are no write policies and table privileges are removed, so clients cannot write directly.
+- `sync_push(jsonb)`: the only way to write. Uses `auth.uid()`, applies the conflict rules, is safe to retry, tombstones deletions (`deleted_at`) and cascades them, repairs an item pointing at a deleted category, never deletes the default deck, and returns rows it rejected instead of failing the batch. At most 1000 changes per call.
+- `sync_pull(table, since, after_id, limit)`: one page (default 500, max 1000) of rows changed after the cursor, oldest first, including tombstones; timestamps as epoch ms, `server_updated_at` as ISO text to pass back. The app must re-read from a few minutes before its saved cursor and apply rows idempotently.
+- Only `authenticated` can execute the functions.
+
+### Files
+Created: `data/local/entity/{SyncOutboxEntity,SyncStateEntity}.kt`, `data/local/dao/SyncOutboxDao.kt`, `data/repository/SyncTimestamps.kt`, `docs/supabase_sync_schema.sql`, `app/src/androidTest/.../data/local/{MigrationTest,OutboxRecordingTest}.kt`.
+Modified (replaced): `data/local/entity/{CategoryEntity,ReviewStateEntity}.kt`, `data/local/database/{MindVaultDatabase,Migrations,DefaultDeckCallback}.kt`, `data/mapper/{KnowledgeMappers,FlashcardMappers}.kt`, `data/repository/{Knowledge,Category,Deck,Flashcard}RepositoryImpl.kt`.
+No new dependencies.
+
+### Known limits
+- Nothing is uploaded yet; the outbox only grows until C2.
+- Server-side name and duplicate-card conflicts are resolved by the app in C2, so the cloud can briefly hold two same-named decks or categories.
+- Tombstones are kept indefinitely (small).
+- A review done on one device can be overwritten by a newer save of the same card on another.
+- Supabase free projects pause after a week of inactivity (see AUTH_SETUP.md).
+
+### Not built
+Push/pull engine, conflict resolution on pull, first full upload, WorkManager, sync status UI, sign-out clearing (C2/C3); guest-to-account import (D1).
+
+## Entry 18 — Phase C2 + C3: sync engine, triggers, status UI, sign-out with final sync
+
+**Status:** Built and verified on device (developer-reported): the v1 -> v2 migration ran with existing data intact, no errors
+**Goal:** Upload pending changes and download cloud changes for the open account vault, resolve conflicts by the Entry 17 rules, sync on app open / a few seconds after a change / about every 6 hours (any network), show honest status in the Profile account card, and make sign-out do a final sync before it removes the account's on-device vault.
+
+### Database, dependencies, setup
+- **No schema change and no migration.** Room stays at version 2; `app/schemas/.../2.json` is unchanged. Only DAO queries and one DAO accessor (`syncStateDao()`) were added.
+- **New dependencies:** `androidx.work:work-runtime-ktx:2.9.1`, `androidx.hilt:hilt-work:1.2.0`, `androidx.hilt:hilt-compiler:1.2.0` (KSP).
+- **Manifest:** WorkManager's default initializer is removed; `MindVaultApp` provides the configuration with Hilt's worker factory.
+- **Delete `core/di/DatabaseModule.kt`.** Entry 16 said it was removed, but it was still in the project tree. It provides a second, unused database on the guest file.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Purpose |
+|---|---|
+| `data/sync/SyncModels.kt` | Wire types, run result, failure kinds, sync_state keys |
+| `data/sync/SyncRemote.kt` | Interface to the cloud (push / pull) |
+| `data/sync/SyncLocalStore.kt`, `RoomSyncLocalStore.kt` | Everything the engine needs from one vault; Room implementation |
+| `data/sync/SyncWire.kt` | Builds the `data` object for an upsert from the vault |
+| `data/sync/SyncEngine.kt` | One run: first full upload, push, pull, push again |
+| `data/sync/SyncApplier.kt` | The conflict policy for pulled rows |
+| `data/sync/SupabaseSyncRemote.kt` | `sync_push` / `sync_pull` through Postgrest; refuses another user's vault |
+| `data/sync/SyncRepositoryImpl.kt` | Runs the engine one at a time, triggers, status, final sync |
+| `data/sync/SyncScheduler.kt`, `SyncWorker.kt` | WorkManager: one-time and 6-hourly |
+| `data/local/dao/SyncStateDao.kt` | Sync bookkeeping access |
+| `core/di/SyncModule.kt` | Hilt bindings |
+| `domain/model/SyncStatus.kt`, `domain/repository/SyncRepository.kt` | Status model and contract |
+| `domain/usecase/SyncStatusBuilder.kt`, `ObserveSyncStatusUseCase.kt`, `SyncNowUseCase.kt`, `SignOutWithSyncUseCase.kt` | Use cases |
+| `app/src/test/.../data/sync/FakeSyncLocalStore.kt`, `FakeSyncRemote.kt`, `SyncApplierTest.kt`, `SyncEngineTest.kt`; `.../domain/usecase/SyncStatusBuilderTest.kt` | 36 unit tests |
+
+### Files modified
+`data/local/dao/{SyncOutbox,Category,Deck,KnowledgeItem,Flashcard,ReviewState}Dao.kt` (new queries), `data/local/database/MindVaultDatabase.kt` (`syncStateDao()`), `app/MindVaultApp.kt`, `feature/profile/{ProfileScreen,Profileuistate,Profileviewmodel}.kt`, `gradle/libs.versions.toml`, `app/build.gradle.kts`, `AndroidManifest.xml`.
+
+### Key decisions
+- **Order of a run:** queue the first full upload (once), push, pull every table (parents first), push again if conflict handling queued changes.
+- **Push order:** upserts category+deck, item, card, review state; then deletions card, item, deck, category. A row waits while something it depends on is still queued (the server skips a card whose item is missing without reporting it).
+- **Outbox safety:** an entry is removed only if it is unchanged since it was read (a newer edit during the upload stays queued). An upsert whose row no longer exists is dropped.
+- **Pull:** cursor per table in `sync_state`, re-read from 5 minutes before the cursor, pages of 500, cursor saved only after a table finished. Pulled rows are written without outbox entries.
+- **Conflicts:** newer `updatedAt` wins (equal or older ignored); deletion wins; same-name categories merge (older kept, items re-pointed with `updatedAt` moved forward, loser deleted in the cloud, alias stored so late items map to the kept one); the later deck becomes "Name (2)" and is uploaded, the default deck is never renamed; of two cards for the same item and deck the earlier is kept; no card for a missing item or deck; a pulled card gets a starting review state that the cloud's state overrides.
+- **Safety:** sync runs only while the signed-in user is the owner of the open vault (checked in the repository and again in the remote). The guest vault never syncs.
+- **Triggers:** app open or account change (one-time work), 5 s after the last change (debounced), every 6 hours; network required. WorkManager retries with exponential backoff, up to 5 attempts. A missing sign-in is not retried.
+- **Status:** Syncing, Not synced yet, Waiting (N changes), Synced (time), Needs attention (offline / sign in again / server problem / N changes refused). "Sync now" runs in the foreground.
+- **Sign-out:** final sync (25 s limit) → sign out → remove the account's on-device vault only if everything was uploaded; otherwise the vault stays and Profile says so. Account deletion is unchanged.
+- **Moved items:** items re-pointed by a category merge move to the top of "recently updated" once.
+- **Old `SignOutUseCase`** is unchanged and now unused (its existing test still compiles); remove it when convenient.
+
+### Known limits
+- A review done on one device can be overwritten by a newer save of the same card on another.
+- A category merge can briefly leave two same-named categories in the cloud until the next sync finishes.
+- Whole vault tables are read into memory for the first upload (fine for personal vaults).
+- Status text for "Synced" does not tick forward on its own; it refreshes on the next status change.
+- Not covered by tests: Supabase calls, WorkManager, UI, process death mid-run.
+
+### Likely compile-fix spots
+`SupabaseSyncRemote` (`RestException.statusCode`, `HttpRequestException`, `PostgrestResult.data`, `rpc` parameter overload), `SyncWorker`/`MindVaultApp` (Hilt-work and `Configuration.Provider` property form), `SyncRepositoryImpl` (`SessionState.SignedIn.user.id`).
+
+### Manual checks to run
+1. Sign in on the emulator, add an item: Profile shows "1 change is waiting…" then "Synced just now". Check the row in the Supabase table editor.
+2. Airplane mode, add and edit items: status shows waiting; go online: it syncs without opening the app screen.
+3. Two devices (or emulator + phone), same account: edit the same item on both, the later edit wins on both.
+4. Delete an item on one device: it disappears on the other after sync, with its cards.
+5. Create a category named "Science" on both devices while offline, then sync both: one category remains, items keep a category.
+6. Create a deck with the same name on both: the later one becomes "Name (2)" on both.
+7. Sign out online: Home as guest, the account's items are gone from the device; sign in again: they come back.
+8. Sign out in airplane mode: sign-out works, Profile says the account's items were kept on this device; sign in later and they sync.
+9. Delete account: cloud rows are gone (unchanged behavior).
+10. Force-stop the app with pending changes, reopen: they upload.
+
+## Entry 19 — Phase 8a: SM-2 scheduler (pure domain logic)
+
+**Status:** Written, not built.
+
+**Goal:** Modular spaced-repetition scheduler, independent of Room and UI, so FSRS can replace SM-2 later by swapping one binding.
+
+### Files created (under `…/mindvault/`)
+`domain/scheduling/{ReviewRating,SchedulingState,ReviewScheduler,Sm2Scheduler}.kt`; `app/src/test/…/domain/scheduling/Sm2SchedulerTest.kt`.
+
+### Key decisions
+- SM-2 variant with four ratings; Again = 10-minute relearn, repetitions reset, ease -0.20 (floor 1.3).
+- Hard x1.2 (min +1 day); Good 1 → 6 → x ease; Easy x ease x 1.3; Hard < Good < Easy enforced; ease cap 3.0; interval cap 36,500 days.
+- Intervals of 1+ days land on local midnight (zone passed in), so "due today" is a date comparison.
+- Mastered = interval >= 21 days. Difficult = last rating Again or Hard.
+- No schema change, no dependency, no UI change in this phase.
+
+### Not built
+Room columns (repetitions, lastRating), migration 2→3, cloud/sync changes, review modes, rating UI, statistics, docs updates (Phase 8b).

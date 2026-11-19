@@ -35,43 +35,7 @@ Use a single Android application module initially unless the project has a demon
 Suggested package layout (adapt the root package to the actual application namespace):
 
 ```text
-com.mindvault/
-├── app/
-│   ├── MindVaultApp.kt
-│   └── MainActivity.kt
-├── core/
-│   ├── di/
-│   ├── navigation/
-│   ├── ui/
-│   │   └── components/
-│   ├── theme/
-│   └── util/
-├── data/
-│   ├── local/
-│   │   ├── database/
-│   │   ├── dao/
-│   │   ├── entity/
-│   │   └── relation/
-│   ├── remote/
-│   │   ├── api/
-│   │   ├── dto/
-│   │   └── datasource/
-│   ├── mapper/
-│   └── repository/
-├── domain/
-│   ├── model/
-│   ├── repository/
-│   └── usecase/
-└── feature/
-    ├── home/
-    │   ├── HomeScreen.kt
-    │   ├── HomeViewModel.kt
-    │   └── HomeUiState.kt
-    ├── search/
-    ├── vault/
-    ├── knowledge/
-    ├── flashcards/
-    └── profile/
+Refer to the given Tree structure of the project
 ```
 
 The exact directory layout may differ if the existing project uses another consistent convention. Do not move files merely to match this example if doing so creates unnecessary churn.
@@ -87,7 +51,7 @@ The exact directory layout may differ if the existing project uses another consi
 - `core`: app-wide infrastructure and reusable UI.
 - `data`: persistence, remote API access, mapping and repository implementations.
 - `domain`: app concepts, repository contracts and business use cases.
-
+- Repositories reach Room only through ActiveDatabase; DAOs and the database are not injectable
 Keep feature-specific UI and state inside the relevant feature package. Do not create a generic framework for hypothetical future features.
 
 ## 4. Architecture Boundaries
@@ -283,7 +247,6 @@ AI tools may not have direct repository access. Therefore:
 Do not build these unless explicitly requested:
 - AI services or AI-generated content
 - Cloud sync or multi-device conflict resolution
-- Authentication-dependent data flows
 - Social features or collaboration
 - Large bundled knowledge databases
 - Accessibility-service-based text capture
