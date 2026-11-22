@@ -57,10 +57,12 @@ class DeckRepositoryImpl @Inject constructor(
         }
     }
 
+    /** The default deck cannot be renamed. */
     override suspend fun rename(id: String, name: String): Deck? {
         val db = active.current
         val dao = db.deckDao()
         val existing = dao.getById(id) ?: return null
+        if (existing.isDefault) throw DefaultDeckProtectedException()
         val updated = existing.copy(name = name.trim(), updatedAt = nextUpdatedAt(existing.updatedAt))
         return try {
             db.withTransaction {
@@ -87,5 +89,22 @@ class DeckRepositoryImpl @Inject constructor(
                 outboxEntry(SyncEntityType.DECK, id, SyncOperation.DELETE, nowMillis()),
             )
         }
+    }
+
+    override suspend fun ensureCategoryDeck(categoryId: String): Deck? {
+        val db = active.current
+        return db.withTransaction<Deck?> {
+            val category = db.categoryDao().getById(categoryId) ?: return@withTransaction null
+            CategoryDecks.ensureDeck(db, category).toDomain()
+        }
+    }
+
+    override suspend fun findCategoryDeck(categoryId: String): Deck? =
+        active.current.deckDao().findByCategory(categoryId)?.toDomain()
+
+    override suspend fun findCategoryDeckHoldingItem(itemId: String, categoryId: String): Deck? {
+        val db = active.current
+        val deck = db.deckDao().findByCategory(categoryId) ?: return null
+        return if (db.flashcardDao().findByItemAndDeck(itemId, deck.id) != null) deck.toDomain() else null
     }
 }

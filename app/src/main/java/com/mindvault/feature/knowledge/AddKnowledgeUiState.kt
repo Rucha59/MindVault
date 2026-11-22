@@ -15,6 +15,12 @@ data class KnowledgeFormValues(
     val categoryId: String? = null,
 )
 
+/** Asked when an item leaves a category whose deck holds its card. */
+data class DeckRemovalPrompt(
+    val itemTitle: String,
+    val deckName: String,
+)
+
 data class AddKnowledgeUiState(
     val title: String = "",
     val type: KnowledgeType = KnowledgeType.WORD,
@@ -32,6 +38,8 @@ data class AddKnowledgeUiState(
     val isLoading: Boolean = false,
     val loadError: Boolean = false,
     val initialValues: KnowledgeFormValues = KnowledgeFormValues(),
+    /** Non-null while the "remove its card from the old category's deck?" question is showing. */
+    val deckRemovalPrompt: DeckRemovalPrompt? = null,
 ) {
     val currentValues: KnowledgeFormValues
         get() = KnowledgeFormValues(title, type, definition, personalNotes, example, categoryId)

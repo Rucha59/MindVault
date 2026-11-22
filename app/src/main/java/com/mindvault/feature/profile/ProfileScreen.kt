@@ -108,6 +108,9 @@ fun ProfileScreen(
                 )
             }
             Spacer(Modifier.height(MindVaultSpacing.space6))
+            NewCardsPerDaySetting() // delete or comment out this line to hide the setting
+            Spacer(Modifier.height(MindVaultSpacing.space3))
+            CategoryDeckSetting() // delete or comment out this line to hide the setting
         }
     }
 

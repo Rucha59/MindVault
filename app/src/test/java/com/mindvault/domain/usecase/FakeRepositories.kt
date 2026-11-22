@@ -8,6 +8,7 @@ import com.mindvault.domain.repository.KnowledgeRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import com.mindvault.domain.error.DuplicateNameException
 
 class FakeKnowledgeRepository(initial: List<KnowledgeItem> = emptyList()) : KnowledgeRepository {
     val items = MutableStateFlow(initial)
@@ -31,7 +32,7 @@ class FakeKnowledgeRepository(initial: List<KnowledgeItem> = emptyList()) : Know
         return item
     }
 
-    override suspend fun update(item: KnowledgeItem): KnowledgeItem? {
+    override suspend fun update(item: KnowledgeItem, removeFromOldCategoryDeck: Boolean): KnowledgeItem? {
         if (items.value.none { it.id == item.id }) return null
         items.value = items.value.map { if (it.id == item.id) item else it }
         return item
@@ -54,8 +55,13 @@ class FakeCategoryRepository(initial: List<Category> = emptyList()) : CategoryRe
         return category
     }
 
-    override suspend fun rename(id: String, name: String): Category? = null
-    override suspend fun delete(id: String) {
-        categories.value = categories.value.filterNot { it.id == id }
+    override suspend fun rename(id: String, name: String): Category? {
+        val existing = categories.value.firstOrNull { it.id == id } ?: return null
+        if (categories.value.any { it.id != id && it.name.equals(name, ignoreCase = true) }) {
+            throw DuplicateNameException(name)
+        }
+        val renamed = existing.copy(name = name)
+        categories.value = categories.value.map { if (it.id == id) renamed else it }
+        return renamed
     }
 }

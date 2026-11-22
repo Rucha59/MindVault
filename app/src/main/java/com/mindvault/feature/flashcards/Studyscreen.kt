@@ -44,6 +44,7 @@ import com.mindvault.core.ui.components.SecondaryButton
 import com.mindvault.domain.model.KnowledgeItem
 import com.mindvault.domain.model.StudySession
 
+/** Practice: flip through cards. Nothing is rated or saved, and the review schedule is never changed. */
 @Composable
 fun StudyScreen(
     onBackClick: () -> Unit,
@@ -54,7 +55,7 @@ fun StudyScreen(
     val title = when (val current = state) {
         is StudyUiState.Active -> current.deckName
         is StudyUiState.Empty -> current.deckName
-        else -> "Study"
+        else -> "Practice"
     }
 
     Column(modifier.fillMaxSize()) {
@@ -79,7 +80,7 @@ fun StudyScreen(
             is StudyUiState.Empty -> MessageBody {
                 EmptyState(
                     icon = Icons.Outlined.Style,
-                    title = "No cards to study",
+                    title = "No cards to practice",
                     message = "Add cards to this deck first.",
                     actionLabel = "Back to deck",
                     onAction = onBackClick,
@@ -146,7 +147,13 @@ private fun ColumnScope.CardContent(
             color = MindVaultColors.Forest,
             trackColor = MindVaultColors.SurfaceVariant,
         )
-        Spacer(Modifier.height(MindVaultSpacing.space4))
+        Spacer(Modifier.height(MindVaultSpacing.space2))
+        Text(
+            text = "Practice: your review schedule isn't changed.",
+            style = MaterialTheme.typography.labelMedium,
+            color = MindVaultColors.TextSecondary,
+        )
+        Spacer(Modifier.height(MindVaultSpacing.space3))
 
         Column(
             modifier = Modifier
@@ -187,7 +194,7 @@ private fun ColumnScope.CardContent(
 
 /** Term on the front; definition, notes and example on the back. Tapping the card flips it. */
 @Composable
-private fun FlashcardFace(item: KnowledgeItem, revealed: Boolean, onFlip: () -> Unit) {
+internal fun FlashcardFace(item: KnowledgeItem, revealed: Boolean, onFlip: () -> Unit) {
     MindVaultCard(
         modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
         onClick = onFlip,
@@ -264,10 +271,10 @@ private fun ColumnScope.FinishedContent(
     ) {
         EmptyState(
             icon = Icons.Outlined.CheckCircle,
-            title = if (session.isDeckComplete) "Deck complete" else "Session complete",
-            message = "You reviewed ${session.reviewedThisRun.size} of ${cardsLabel(session.total)} this session. " +
-                    "${session.reviewedInDeck} of ${session.total} in this deck have been reviewed.",
-            actionLabel = "Study again",
+            title = "Practice complete",
+            message = "You went through ${session.reviewedThisRun.size} of ${cardsLabel(session.total)} this session. " +
+                    "Practice doesn't change your review schedule.",
+            actionLabel = "Practice again",
             onAction = onRestart,
         )
         SecondaryButton(text = "Back to deck", onClick = onBackToDeck)

@@ -3,10 +3,14 @@ package com.mindvault.domain.usecase
 import com.mindvault.domain.model.AuthError
 import com.mindvault.domain.model.AuthFieldError
 import com.mindvault.domain.model.AuthResult
+import com.mindvault.domain.model.DataOwner
 import com.mindvault.domain.model.SessionState
 import com.mindvault.domain.model.SignUpOutcome
+import com.mindvault.domain.repository.AccountDataRepository
 import com.mindvault.domain.repository.AuthRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -50,6 +54,19 @@ private class FakeAuthRepository(
     override suspend fun signOut(): AuthResult<Unit> {
         signOutCalls++
         return signOutResult
+    }
+}
+
+private class FakeAccountDataRepository(initialOwner: DataOwner) : AccountDataRepository {
+    private val ownerFlow = MutableStateFlow(initialOwner)
+    override val owner: StateFlow<DataOwner> = ownerFlow
+
+    /** User IDs whose on-device vault was deleted. */
+    val deletedVaults = mutableListOf<String>()
+
+    override fun start() = Unit
+    override suspend fun deleteAccountData(userId: String) {
+        deletedVaults += userId
     }
 }
 
@@ -111,10 +128,32 @@ class AuthUseCasesTest {
     }
 
     @Test fun deleteAccountDelegatesAndPassesFailureThrough() = runBlocking {
-        assertEquals(AuthResult.Success(Unit), DeleteAccountUseCase(repo)())
+        val accountData = FakeAccountDataRepository(DataOwner.Account("u1"))
+        val useCase = DeleteAccountUseCase(repo, accountData)
+
+        assertEquals(AuthResult.Success(Unit), useCase())
         repo.deleteResult = AuthResult.Failure(AuthError.Network)
-        assertEquals(AuthResult.Failure(AuthError.Network), DeleteAccountUseCase(repo)())
+        assertEquals(AuthResult.Failure(AuthError.Network), useCase())
         assertEquals(2, repo.deleteCalls)
+    }
+
+    @Test fun deleteAccountRemovesTheLocalVaultOnlyAfterTheServerSucceeds() = runBlocking {
+        val accountData = FakeAccountDataRepository(DataOwner.Account("u1"))
+        val useCase = DeleteAccountUseCase(repo, accountData)
+
+        repo.deleteResult = AuthResult.Failure(AuthError.Network)
+        useCase()
+        assertTrue(accountData.deletedVaults.isEmpty()) // server failed: the vault stays
+
+        repo.deleteResult = AuthResult.Success(Unit)
+        useCase()
+        assertEquals(listOf("u1"), accountData.deletedVaults)
+    }
+
+    @Test fun deleteAccountNeverTouchesTheGuestVault() = runBlocking {
+        val accountData = FakeAccountDataRepository(DataOwner.Guest)
+        DeleteAccountUseCase(repo, accountData)()
+        assertTrue(accountData.deletedVaults.isEmpty())
     }
 
     @Test fun signOutDelegates() = runBlocking {

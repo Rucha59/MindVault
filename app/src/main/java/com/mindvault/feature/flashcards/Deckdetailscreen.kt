@@ -59,11 +59,14 @@ import com.mindvault.core.ui.components.PrimaryButton
 import com.mindvault.core.ui.components.SecondaryButton
 import com.mindvault.domain.model.DeckDetail
 import com.mindvault.domain.model.FlashcardDetail
+import com.mindvault.domain.model.ReviewCounts
+import com.mindvault.domain.model.ReviewMode
 
 @Composable
 fun DeckDetailScreen(
     onBackClick: () -> Unit,
     onStudyClick: (deckId: String, shuffle: Boolean) -> Unit,
+    onReviewClick: (deckId: String, mode: ReviewMode) -> Unit,
     onAddCardsClick: (deckId: String) -> Unit,
     onCardClick: (itemId: String) -> Unit,
     modifier: Modifier = Modifier,
@@ -71,6 +74,7 @@ fun DeckDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val actions by viewModel.actions.collectAsStateWithLifecycle()
+    val reviewCounts by viewModel.reviewCounts.collectAsStateWithLifecycle()
     var showRenameDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var cardToRemoveId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -93,16 +97,14 @@ fun DeckDetailScreen(
             title = detail?.deck?.name ?: "Deck",
             onBackClick = onBackClick,
             actions = {
-                if (detail != null) {
+                // The default deck can't be renamed or deleted, so neither action is offered.
+                if (detail != null && !detail.deck.isDefault) {
                     val iconColors = IconButtonDefaults.iconButtonColors(contentColor = MindVaultColors.TextPrimary)
                     IconButton(onClick = { showRenameDialog = true }, colors = iconColors) {
                         Icon(Icons.Outlined.Edit, contentDescription = "Rename deck")
                     }
-                    // The default deck can never be deleted, so the action isn't offered.
-                    if (!detail.deck.isDefault) {
-                        IconButton(onClick = { showDeleteDialog = true }, colors = iconColors) {
-                            Icon(Icons.Outlined.Delete, contentDescription = "Delete deck")
-                        }
+                    IconButton(onClick = { showDeleteDialog = true }, colors = iconColors) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "Delete deck")
                     }
                 }
             },
@@ -132,8 +134,10 @@ fun DeckDetailScreen(
 
             is DeckDetailUiState.Content -> DeckContent(
                 detail = current.detail,
+                reviewCounts = reviewCounts,
                 message = actions.message,
                 onStudyClick = { shuffle -> onStudyClick(current.detail.deck.id, shuffle) },
+                onReviewClick = { mode -> onReviewClick(current.detail.deck.id, mode) },
                 onAddCardsClick = { onAddCardsClick(current.detail.deck.id) },
                 onCardClick = onCardClick,
                 onRemoveCard = { cardToRemoveId = it },
@@ -251,14 +255,18 @@ private fun CenteredMessage(
 @Composable
 private fun DeckContent(
     detail: DeckDetail,
+    reviewCounts: ReviewCounts,
     message: String?,
     onStudyClick: (shuffle: Boolean) -> Unit,
+    onReviewClick: (ReviewMode) -> Unit,
     onAddCardsClick: () -> Unit,
     onCardClick: (itemId: String) -> Unit,
     onRemoveCard: (flashcardId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val hasCards = detail.cards.isNotEmpty()
+    // The default deck holds every Vault item automatically, so cards are never added or removed by hand there.
+    val isDefaultDeck = detail.deck.isDefault
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(
@@ -271,28 +279,45 @@ private fun DeckContent(
         item(key = "header") {
             Column(verticalArrangement = Arrangement.spacedBy(MindVaultSpacing.space4)) {
                 DeckProgress(detail.summary)
-                Row(horizontalArrangement = Arrangement.spacedBy(MindVaultSpacing.space3)) {
-                    PrimaryButton(
-                        text = "Study",
-                        onClick = { onStudyClick(false) },
-                        enabled = hasCards,
-                        icon = Icons.Outlined.Style,
-                        modifier = Modifier.weight(1f),
-                    )
-                    SecondaryButton(
-                        text = "Shuffle",
-                        onClick = { onStudyClick(true) },
-                        enabled = hasCards,
-                        icon = Icons.Outlined.Shuffle,
-                        modifier = Modifier.weight(1f),
+                if (isDefaultDeck && hasCards) {
+                    Text(
+                        text = "This deck holds everything in your Vault. New items are added automatically.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MindVaultColors.TextSecondary,
                     )
                 }
-                SecondaryButton(
-                    text = "Add cards",
-                    onClick = onAddCardsClick,
-                    icon = Icons.Outlined.Add,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (hasCards) {
+                    ReviewSection(counts = reviewCounts, onReviewClick = onReviewClick)
+                    Column(verticalArrangement = Arrangement.spacedBy(MindVaultSpacing.space2)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(MindVaultSpacing.space3)) {
+                            SecondaryButton(
+                                text = "Practice",
+                                onClick = { onStudyClick(false) },
+                                icon = Icons.Outlined.Style,
+                                modifier = Modifier.weight(1f),
+                            )
+                            SecondaryButton(
+                                text = "Shuffle",
+                                onClick = { onStudyClick(true) },
+                                icon = Icons.Outlined.Shuffle,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Text(
+                            text = "Practice doesn't change your review schedule.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MindVaultColors.TextSecondary,
+                        )
+                    }
+                }
+                if (!isDefaultDeck) {
+                    SecondaryButton(
+                        text = "Add cards",
+                        onClick = onAddCardsClick,
+                        icon = Icons.Outlined.Add,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
         message?.let {
@@ -302,16 +327,25 @@ private fun DeckContent(
         }
         if (!hasCards) {
             item(key = "empty") {
-                EmptyState(
-                    icon = Icons.Outlined.Style,
-                    title = "No cards in this deck",
-                    message = "Add cards from your Vault to start studying.",
-                )
+                if (isDefaultDeck) {
+                    EmptyState(
+                        icon = Icons.Outlined.Style,
+                        title = "No saved items yet",
+                        message = "Items you save in your Vault appear here automatically.",
+                    )
+                } else {
+                    EmptyState(
+                        icon = Icons.Outlined.Style,
+                        title = "No cards in this deck",
+                        message = "Add cards from your Vault to start studying.",
+                    )
+                }
             }
         } else {
             items(detail.cards, key = { it.flashcard.id }) { card ->
                 DeckCardRow(
                     card = card,
+                    canRemove = !isDefaultDeck,
                     onClick = { onCardClick(card.knowledgeItem.id) },
                     onRemove = { onRemoveCard(card.flashcard.id) },
                 )
@@ -320,9 +354,54 @@ private fun DeckContent(
     }
 }
 
+/** Today's spaced-repetition work for this deck: one main Daily review plus New and Difficult cards. */
+@Composable
+private fun ReviewSection(counts: ReviewCounts, onReviewClick: (ReviewMode) -> Unit) {
+    MindVaultCard(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Review today",
+            style = MaterialTheme.typography.titleMedium,
+            color = MindVaultColors.TextPrimary,
+        )
+        Spacer(Modifier.height(MindVaultSpacing.space1))
+        Text(
+            text = if (counts.dailyTotal == 0) {
+                "You're all caught up for today."
+            } else {
+                "${counts.dueReviews} due · ${counts.newCards} new"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MindVaultColors.TextSecondary,
+        )
+        Spacer(Modifier.height(MindVaultSpacing.space3))
+        PrimaryButton(
+            text = if (counts.dailyTotal > 0) "Review ${cardsLabel(counts.dailyTotal)}" else "Nothing due",
+            onClick = { onReviewClick(ReviewMode.DAILY) },
+            enabled = counts.dailyTotal > 0,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(MindVaultSpacing.space2))
+        Row(horizontalArrangement = Arrangement.spacedBy(MindVaultSpacing.space3)) {
+            SecondaryButton(
+                text = "New cards (${counts.newCards})",
+                onClick = { onReviewClick(ReviewMode.NEW_CARDS) },
+                enabled = counts.newCards > 0,
+                modifier = Modifier.weight(1f),
+            )
+            SecondaryButton(
+                text = "Difficult (${counts.difficult})",
+                onClick = { onReviewClick(ReviewMode.DIFFICULT) },
+                enabled = counts.difficult > 0,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
 @Composable
 private fun DeckCardRow(
     card: FlashcardDetail,
+    canRemove: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -357,11 +436,13 @@ private fun DeckCardRow(
                     )
                 }
             }
-            IconButton(
-                onClick = onRemove,
-                colors = IconButtonDefaults.iconButtonColors(contentColor = MindVaultColors.TextSecondary),
-            ) {
-                Icon(Icons.Outlined.RemoveCircleOutline, contentDescription = "Remove from deck")
+            if (canRemove) {
+                IconButton(
+                    onClick = onRemove,
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MindVaultColors.TextSecondary),
+                ) {
+                    Icon(Icons.Outlined.RemoveCircleOutline, contentDescription = "Remove from deck")
+                }
             }
         }
     }

@@ -27,7 +27,7 @@ import com.mindvault.data.local.entity.SyncStateEntity
         SyncOutboxEntity::class,
         SyncStateEntity::class,
     ],
-    version = 2,
+    version = 5,
     exportSchema = true,
 )
 abstract class MindVaultDatabase : RoomDatabase() {

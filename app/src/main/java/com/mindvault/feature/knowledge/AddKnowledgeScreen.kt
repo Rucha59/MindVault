@@ -210,6 +210,13 @@ fun AddKnowledgeScreen(
             onDismiss = viewModel::onNewCategoryDismissed,
         )
     }
+    state.deckRemovalPrompt?.let { prompt ->
+        DeckRemovalDialog(
+            prompt = prompt,
+            onChoice = viewModel::onDeckRemovalChoice,
+            onDismiss = viewModel::onDeckRemovalDismissed,
+        )
+    }
 
     if (showDiscardDialog) {
         AlertDialog(

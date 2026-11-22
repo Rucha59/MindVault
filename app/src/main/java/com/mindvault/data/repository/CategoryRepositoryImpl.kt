@@ -30,6 +30,7 @@ class CategoryRepositoryImpl @Inject constructor(
     override suspend fun getById(id: String): Category? =
         active.current.categoryDao().getById(id)?.toDomain()
 
+    /** A new category also gets its flashcard deck, in the same transaction. */
     override suspend fun create(name: String): Category {
         val db = active.current
         val dao = db.categoryDao()
@@ -43,6 +44,7 @@ class CategoryRepositoryImpl @Inject constructor(
                 db.syncOutboxDao().upsert(
                     outboxEntry(SyncEntityType.CATEGORY, entity.id, SyncOperation.UPSERT, entity.updatedAt),
                 )
+                CategoryDecks.ensureDeck(db, entity)
             }
             entity.toDomain()
         } catch (e: SQLiteConstraintException) {
@@ -51,6 +53,7 @@ class CategoryRepositoryImpl @Inject constructor(
         }
     }
 
+    /** The category's deck follows the new name, unless the user gave the deck a different name. */
     override suspend fun rename(id: String, name: String): Category? {
         val db = active.current
         val dao = db.categoryDao()
@@ -62,6 +65,7 @@ class CategoryRepositoryImpl @Inject constructor(
                 db.syncOutboxDao().upsert(
                     outboxEntry(SyncEntityType.CATEGORY, id, SyncOperation.UPSERT, updated.updatedAt),
                 )
+                CategoryDecks.renameDeck(db, id, oldName = existing.name, newName = updated.name)
             }
             updated.toDomain()
         } catch (e: SQLiteConstraintException) {
@@ -70,8 +74,9 @@ class CategoryRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Items in the category are kept; their category becomes null (database rule). Only the category's deletion
-     * is recorded for sync: the cloud clears the category on those items too, without touching their updatedAt.
+     * Items in the category are kept; their category becomes null (database rule). Its deck is kept too, as an
+     * ordinary deck (its category link is cleared by the database). Only the category's deletion is recorded for
+     * sync: the cloud clears the category on those items and decks too, without touching their updatedAt.
      */
     override suspend fun delete(id: String) {
         val db = active.current

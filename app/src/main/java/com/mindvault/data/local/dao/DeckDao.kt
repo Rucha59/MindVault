@@ -32,6 +32,10 @@ interface DeckDao {
     @Query("SELECT * FROM decks WHERE name = :name LIMIT 1")
     suspend fun findByName(name: String): DeckEntity?
 
+    /** The deck made for a category (the oldest one, if several). */
+    @Query("SELECT * FROM decks WHERE categoryId = :categoryId ORDER BY createdAt, id LIMIT 1")
+    suspend fun findByCategory(categoryId: String): DeckEntity?
+
     /** Sync (Phase C2): the first full upload reads every row once. */
     @Query("SELECT * FROM decks")
     suspend fun getAll(): List<DeckEntity>

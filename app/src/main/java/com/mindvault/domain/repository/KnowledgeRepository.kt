@@ -14,8 +14,12 @@ interface KnowledgeRepository {
 
     suspend fun create(draft: KnowledgeItemDraft): KnowledgeItem
 
-    /** Keeps createdAt, sets updatedAt. Returns null if the item no longer exists. */
-    suspend fun update(item: KnowledgeItem): KnowledgeItem?
+    /**
+     * Keeps createdAt, sets updatedAt. Returns null if the item no longer exists. An item moved into a category
+     * gets a card in that category's deck. If the item leaves a category and [removeFromOldCategoryDeck] is true,
+     * its card in that category's deck is removed in the same transaction (cards in other decks stay).
+     */
+    suspend fun update(item: KnowledgeItem, removeFromOldCategoryDeck: Boolean = false): KnowledgeItem?
 
     /** Also removes the item's flashcards and review state. */
     suspend fun delete(id: String)

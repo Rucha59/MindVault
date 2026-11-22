@@ -41,9 +41,14 @@ const val T0 = "2026-01-01T00:00:00Z"
 fun catRow(id: String, name: String, created: Long = 10, updated: Long = created, deleted: Long? = null, server: String = T0) =
     mapOf("id" to id, "name" to name, "created_at" to created, "updated_at" to updated, "deleted_at" to deleted, "server_updated_at" to server)
 
-fun deckRow(id: String, name: String, created: Long = 10, updated: Long = created, deleted: Long? = null, isDefault: Boolean = false, server: String = T0) =
-    mapOf("id" to id, "name" to name, "is_default" to isDefault, "created_at" to created, "updated_at" to updated, "deleted_at" to deleted, "server_updated_at" to server)
-
+fun deckRow(
+    id: String, name: String, created: Long = 10, updated: Long = created, deleted: Long? = null,
+    isDefault: Boolean = false, server: String = T0, categoryId: String? = null,
+) =
+    mapOf(
+        "id" to id, "name" to name, "is_default" to isDefault, "category_id" to categoryId,
+        "created_at" to created, "updated_at" to updated, "deleted_at" to deleted, "server_updated_at" to server,
+    )
 fun itemRow(id: String, title: String = "Remote $id", category: String? = null, created: Long = 10, updated: Long = created, deleted: Long? = null, server: String = T0) =
     mapOf(
         "id" to id, "title" to title, "type" to "WORD", "definition" to "Remote definition", "personal_notes" to "",

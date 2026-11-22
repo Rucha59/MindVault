@@ -10,7 +10,9 @@ import com.mindvault.data.local.entity.SyncOperation
 import com.mindvault.data.local.entity.outboxEntry
 import com.mindvault.data.mapper.toDomain
 import com.mindvault.data.mapper.toEntity
+import com.mindvault.domain.error.DefaultDeckProtectedException
 import com.mindvault.domain.model.AddToDeckResult
+import com.mindvault.domain.model.Deck
 import com.mindvault.domain.model.FlashcardDetail
 import com.mindvault.domain.model.ReviewState
 import com.mindvault.domain.repository.FlashcardRepository
@@ -70,10 +72,16 @@ class FlashcardRepositoryImpl @Inject constructor(
         }
     }
 
-    /** The review state goes with the card (database cascade); only the card's deletion is recorded for sync. */
+    /**
+     * The review state goes with the card (database cascade); only the card's deletion is recorded for sync.
+     * Cards of the default deck cannot be removed by hand: they leave only when their Vault item is deleted.
+     */
     override suspend fun removeFromDeck(flashcardId: String) {
         val db = active.current
         db.withTransaction {
+            if (db.flashcardDao().getById(flashcardId)?.deckId == Deck.DEFAULT_DECK_ID) {
+                throw DefaultDeckProtectedException()
+            }
             db.flashcardDao().deleteById(flashcardId)
             db.syncOutboxDao().upsert(
                 outboxEntry(SyncEntityType.FLASHCARD, flashcardId, SyncOperation.DELETE, nowMillis()),

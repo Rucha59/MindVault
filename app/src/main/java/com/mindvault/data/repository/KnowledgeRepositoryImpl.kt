@@ -4,11 +4,13 @@ import androidx.room.withTransaction
 import com.mindvault.core.util.newId
 import com.mindvault.core.util.nowMillis
 import com.mindvault.data.local.database.ActiveDatabase
+import com.mindvault.data.local.database.MindVaultDatabase
 import com.mindvault.data.local.entity.SyncEntityType
 import com.mindvault.data.local.entity.SyncOperation
 import com.mindvault.data.local.entity.outboxEntry
 import com.mindvault.data.mapper.toDomain
 import com.mindvault.data.mapper.toEntity
+import com.mindvault.domain.model.Deck
 import com.mindvault.domain.model.KnowledgeItem
 import com.mindvault.domain.model.KnowledgeItemDraft
 import com.mindvault.domain.repository.KnowledgeRepository
@@ -36,6 +38,7 @@ class KnowledgeRepositoryImpl @Inject constructor(
     override suspend fun findByTitle(title: String): KnowledgeItem? =
         active.current.knowledgeItemDao().findByTitle(title.trim())?.toDomain()
 
+    /** Also gives the item a card in the default deck and in its category's deck, in the same transaction. */
     override suspend fun create(draft: KnowledgeItemDraft): KnowledgeItem {
         val db = active.current
         val now = nowMillis()
@@ -50,17 +53,23 @@ class KnowledgeRepositoryImpl @Inject constructor(
             createdAt = now,
             updatedAt = now,
         ).normalized()
-        // The change and its outbox entry are saved together or not at all.
+        // The change, its cards and their outbox entries are saved together or not at all.
         db.withTransaction {
             db.knowledgeItemDao().insert(item.toEntity())
             db.syncOutboxDao().upsert(
                 outboxEntry(SyncEntityType.KNOWLEDGE_ITEM, item.id, SyncOperation.UPSERT, item.updatedAt),
             )
+            addToDefaultDeck(db, item.id, now)
+            item.categoryId?.let { CategoryDecks.addItem(db, item.id, it, now) }
         }
         return item
     }
 
-    override suspend fun update(item: KnowledgeItem): KnowledgeItem? {
+    /**
+     * Moving an item into a category adds its card to that category's deck. If it leaves a category and
+     * [removeFromOldCategoryDeck] is true, its card in that category's deck is removed in the same transaction.
+     */
+    override suspend fun update(item: KnowledgeItem, removeFromOldCategoryDeck: Boolean): KnowledgeItem? {
         val db = active.current
         return db.withTransaction<KnowledgeItem?> {
             val dao = db.knowledgeItemDao()
@@ -73,6 +82,14 @@ class KnowledgeRepositoryImpl @Inject constructor(
             db.syncOutboxDao().upsert(
                 outboxEntry(SyncEntityType.KNOWLEDGE_ITEM, updated.id, SyncOperation.UPSERT, updated.updatedAt),
             )
+            val oldCategory = existing.categoryId
+            val newCategory = updated.categoryId
+            if (newCategory != null && newCategory != oldCategory) {
+                CategoryDecks.addItem(db, updated.id, newCategory, nowMillis())
+            }
+            if (removeFromOldCategoryDeck && oldCategory != null && oldCategory != newCategory) {
+                CategoryDecks.removeItem(db, updated.id, oldCategory)
+            }
             updated
         }
     }
@@ -91,6 +108,12 @@ class KnowledgeRepositoryImpl @Inject constructor(
                 outboxEntry(SyncEntityType.KNOWLEDGE_ITEM, id, SyncOperation.DELETE, nowMillis()),
             )
         }
+    }
+
+    /** The default deck holds every Vault item. */
+    private suspend fun addToDefaultDeck(db: MindVaultDatabase, itemId: String, now: Long) {
+        if (db.deckDao().getById(Deck.DEFAULT_DECK_ID) == null) return
+        CategoryDecks.addCard(db, itemId, Deck.DEFAULT_DECK_ID, now)
     }
 
     private fun KnowledgeItem.normalized() = copy(

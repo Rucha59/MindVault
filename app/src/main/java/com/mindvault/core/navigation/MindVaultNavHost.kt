@@ -23,6 +23,7 @@ import com.mindvault.feature.auth.AuthScreen
 import com.mindvault.feature.flashcards.AddCardsScreen
 import com.mindvault.feature.flashcards.DeckDetailScreen
 import com.mindvault.feature.flashcards.FlashcardsScreen
+import com.mindvault.feature.flashcards.ReviewScreen
 import com.mindvault.feature.flashcards.StudyScreen
 import com.mindvault.feature.home.HomeScreen
 import com.mindvault.feature.knowledge.AddKnowledgeScreen
@@ -159,6 +160,11 @@ fun MindVaultNavHost() {
                             launchSingleTop = true
                         }
                     },
+                    onReviewClick = { deckId, mode ->
+                        navController.navigate(MindVaultDestination.Review.createRoute(deckId, mode.name)) {
+                            launchSingleTop = true
+                        }
+                    },
                     onAddCardsClick = { deckId ->
                         navController.navigate(MindVaultDestination.DeckAddCards.createRoute(deckId)) {
                             launchSingleTop = true
@@ -188,6 +194,15 @@ fun MindVaultNavHost() {
                 ),
             ) {
                 StudyScreen(onBackClick = { navController.popBackStack() })
+            }
+            composable(
+                route = MindVaultDestination.Review.route,
+                arguments = listOf(
+                    navArgument(DECK_ID_ARG) { type = NavType.StringType },
+                    navArgument(REVIEW_MODE_ARG) { type = NavType.StringType },
+                ),
+            ) {
+                ReviewScreen(onBackClick = { navController.popBackStack() })
             }
             composable(MindVaultDestination.Profile.route) {
                 ProfileScreen(

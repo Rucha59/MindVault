@@ -430,6 +430,8 @@ progress numbers or streaks. Hide unavailable statistics or show a
 meaningful empty state. - If the user has no saved content, explain how
 to add the first concept and provide a clear action.
 
+Home add: a "Due for review" section listing decks with cards to review today (deck name, number of cards), hidden when nothing is due.
+
 ### 7.2 Vault --- library-first
 
 **Purpose:** Browse and manage all saved words and concepts.
@@ -470,6 +472,11 @@ with the text. - The term and definition must be readable and visually
 distinct. - Do not mark a card as mastered or update statistics unless
 the user action and persistence logic support it. - Provide clear states
 for no cards, completed session, and unavailable review queue.
+
+Deck screen: a "Review today" card (standard Surface card) with the Daily review primary button and New cards / Difficult secondary buttons, disabled when their count is 0; Practice and Shuffle below it with a note that Practice does not change the schedule.
+Review screen: after Show answer, four rating buttons (Again, Hard, Good, Easy) each showing the next interval (for example "Good · 2d"); Good uses the primary button style, the others secondary. A card returning after Again shows Hard, Good and Easy only. Meaning is carried by the label and interval, not by color.
+Empty review states explain why nothing is shown (all caught up, new-card limit reached, no difficult cards).
+
 
 ### 7.4 Search --- lookup-first
 
@@ -546,7 +553,7 @@ stored or retrieved data, not placeholders presented as facts.
     account, notification, or theme toggles.
 -   Keep visual styling consistent with the same palette and component
     rules.
-
+-   Flashcards" section with "New cards per deck per day" (5, 10, 20, 30, 50; default 20).
 ## 8. Interaction and component states
 
 Every interactive component must define the following states as

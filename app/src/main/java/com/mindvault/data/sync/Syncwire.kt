@@ -15,6 +15,7 @@ internal suspend fun SyncLocalStore.upsertData(type: String, id: String): Map<St
         mapOf(
             "name" to it.name,
             "is_default" to it.isDefault,
+            "category_id" to it.categoryId,
             "created_at" to it.createdAt,
             "updated_at" to it.updatedAt,
         )

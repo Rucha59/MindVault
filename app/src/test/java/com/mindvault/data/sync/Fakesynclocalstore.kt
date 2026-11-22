@@ -58,6 +58,7 @@ class FakeSyncLocalStore : SyncLocalStore {
     override suspend fun deleteCategory(id: String) {
         if (categoryRows.remove(id) == null) return
         itemRows.replaceAll { _, item -> if (item.categoryId == id) item.copy(categoryId = null) else item }
+        deckRows.replaceAll { _, deck -> if (deck.categoryId == id) deck.copy(categoryId = null) else deck } // SET NULL
     }
 
     // Decks
@@ -67,13 +68,17 @@ class FakeSyncLocalStore : SyncLocalStore {
     override suspend fun insertDeck(deck: DeckEntity) {
         check(deck.id !in deckRows) { "duplicate deck id" }
         checkDeckName(deck)
+        checkDeckCategory(deck)
         deckRows[deck.id] = deck
     }
     override suspend fun updateDeck(deck: DeckEntity) {
         check(deck.id in deckRows) { "no such deck" }
         checkDeckName(deck)
+        checkDeckCategory(deck)
         deckRows[deck.id] = deck
     }
+    private fun checkDeckCategory(d: DeckEntity) =
+        check(d.categoryId == null || d.categoryId in categoryRows) { "FOREIGN KEY: deck category ${d.categoryId}" }
     private fun checkDeckName(d: DeckEntity) =
         check(deckRows.values.none { it.id != d.id && it.name.equals(d.name, ignoreCase = true) }) { "UNIQUE decks.name: ${d.name}" }
     override suspend fun deleteDeck(id: String) {
@@ -133,9 +138,10 @@ class FakeSyncLocalStore : SyncLocalStore {
     // Test helpers: add rows the way the app would have, without going through the outbox.
     fun addCategory(id: String, name: String, created: Long = 1L, updated: Long = created) =
         CategoryEntity(id, name, created, updated).also { categoryRows[id] = it }
-    fun addDeck(id: String, name: String, created: Long = 1L, updated: Long = created, isDefault: Boolean = false) =
-        DeckEntity(id, name, isDefault, created, updated).also { deckRows[id] = it }
-    fun addItem(id: String, title: String = "Title $id", categoryId: String? = null, created: Long = 1L, updated: Long = created) =
+    fun addDeck(
+        id: String, name: String, created: Long = 1L, updated: Long = created,
+        isDefault: Boolean = false, categoryId: String? = null,
+    ) = DeckEntity(id, name, isDefault, created, updated, categoryId).also { deckRows[id] = it }    fun addItem(id: String, title: String = "Title $id", categoryId: String? = null, created: Long = 1L, updated: Long = created) =
         KnowledgeItemEntity(id, title, "WORD", "Definition", "", null, categoryId, created, updated).also { itemRows[id] = it }
     fun addCard(id: String, itemId: String, deckId: String, created: Long = 1L): FlashcardEntity {
         val card = FlashcardEntity(id, itemId, deckId, created)

@@ -50,7 +50,7 @@ The exact directory layout may differ if the existing project uses another consi
 - `profile`: profile summary and settings.
 - `core`: app-wide infrastructure and reusable UI.
 - `data`: persistence, remote API access, mapping and repository implementations.
-- `domain`: app concepts, repository contracts and business use cases.
+- `domain`: app concepts, repository contracts and business use cases.scheduler/ (spaced-repetition algorithm behind ReviewScheduler; Sm2Scheduler is the only implementation).
 - Repositories reach Room only through ActiveDatabase; DAOs and the database are not injectable
 Keep feature-specific UI and state inside the relevant feature package. Do not create a generic framework for hypothetical future features.
 
@@ -130,14 +130,12 @@ Screen ← UiState ← ViewModel ← Flow of domain data
 External search results are not automatically saved. Saving must be an explicit user action.
 
 ### Flashcard review
-
-1. The user selects a deck.
-2. The repository loads flashcards and their linked knowledge items.
-3. The UI shows the concept title.
-4. The user reveals the definition and notes.
-5. The user submits a review response.
-6. Domain logic calculates the next review state if spaced repetition is enabled.
-7. The review state is persisted and the UI refreshes.
+1. The user opens a deck and chooses Daily review, New cards or Difficult cards.
+2. LoadReviewQueueUseCase reads the deck once and ReviewQueueBuilder selects the cards (due by calendar day, new cards within the daily limit, difficult by ease).
+3. The UI shows the term; the user reveals the answer and rates it.
+4. RecordCardReviewUseCase asks ReviewScheduler for the next state and the repository saves it (and queues it for sync) before the session moves on.
+5. A card rated Again returns once at the end of the session and asks Hard, Good or Easy; that answer goes through relearn.
+6. Practice uses StudySession and saves nothing.
 
 ## 6. Core Data Model Guidance
 

@@ -7,8 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.mindvault.core.navigation.DECK_ID_ARG
 import com.mindvault.domain.model.DeckDetail
 import com.mindvault.domain.model.DeleteDeckResult
+import com.mindvault.domain.model.ReviewCounts
 import com.mindvault.domain.usecase.DeleteDeckUseCase
 import com.mindvault.domain.usecase.ObserveDeckDetailUseCase
+import com.mindvault.domain.usecase.ObserveDeckReviewCountsUseCase
 import com.mindvault.domain.usecase.RemoveCardFromDeckUseCase
 import com.mindvault.domain.usecase.RenameDeckUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,11 +28,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val TAG = "DeckDetailVM"
+private val NO_REVIEWS = ReviewCounts(dueReviews = 0, newCards = 0, difficult = 0)
 
 @HiltViewModel
 class DeckDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     observeDeckDetail: ObserveDeckDetailUseCase,
+    observeDeckReviewCounts: ObserveDeckReviewCountsUseCase,
     private val renameDeck: RenameDeckUseCase,
     private val deleteDeck: DeleteDeckUseCase,
     private val removeCardFromDeck: RemoveCardFromDeckUseCase,
@@ -56,6 +60,14 @@ class DeckDetailViewModel @Inject constructor(
                 emit(DeckDetailUiState.Error)
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DeckDetailUiState.Loading)
+
+    /** Due / new / difficult counts for the Review section. Zeros if they cannot be loaded. */
+    val reviewCounts: StateFlow<ReviewCounts> = observeDeckReviewCounts(deckId)
+        .catch { e ->
+            Log.e(TAG, "Failed to load review counts", e)
+            emit(NO_REVIEWS)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NO_REVIEWS)
 
     fun onRename(name: String) {
         if (_actions.value.form.isSaving) return

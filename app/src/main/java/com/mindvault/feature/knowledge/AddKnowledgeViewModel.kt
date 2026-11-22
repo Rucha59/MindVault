@@ -9,6 +9,7 @@ import com.mindvault.core.navigation.PREFILL_DEFINITION_ARG
 import com.mindvault.core.navigation.PREFILL_EXAMPLE_ARG
 import com.mindvault.core.navigation.PREFILL_TITLE_ARG
 import com.mindvault.domain.model.CreateCategoryResult
+import com.mindvault.domain.model.DeckRemovalPreference
 import com.mindvault.domain.model.KnowledgeField
 import com.mindvault.domain.model.KnowledgeItem
 import com.mindvault.domain.model.KnowledgeItemDraft
@@ -16,9 +17,12 @@ import com.mindvault.domain.model.KnowledgeType
 import com.mindvault.domain.model.SaveKnowledgeResult
 import com.mindvault.domain.model.UpdateKnowledgeResult
 import com.mindvault.domain.usecase.CreateCategoryUseCase
+import com.mindvault.domain.usecase.FindDeckToLeaveUseCase
 import com.mindvault.domain.usecase.ObserveCategoriesUseCase
+import com.mindvault.domain.usecase.ObserveDeckRemovalPreferenceUseCase
 import com.mindvault.domain.usecase.ObserveKnowledgeDetailUseCase
 import com.mindvault.domain.usecase.SaveKnowledgeItemUseCase
+import com.mindvault.domain.usecase.SetDeckRemovalPreferenceUseCase
 import com.mindvault.domain.usecase.UpdateKnowledgeItemUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -39,6 +43,9 @@ private const val TAG = "AddKnowledgeVM"
 /**
  * Serves Add (no item ID in the route), Edit (item ID present) and Add-from-Search
  * (prefill arguments present; the form starts filled in and counts as unsaved).
+ *
+ * When an edit takes the item out of a category whose deck holds its card, saving asks whether to remove the card
+ * from that deck too (or follows the saved "always remove" / "always keep" setting).
  */
 @HiltViewModel
 class AddKnowledgeViewModel @Inject constructor(
@@ -48,6 +55,9 @@ class AddKnowledgeViewModel @Inject constructor(
     private val createCategory: CreateCategoryUseCase,
     private val saveKnowledgeItem: SaveKnowledgeItemUseCase,
     private val updateKnowledgeItem: UpdateKnowledgeItemUseCase,
+    private val findDeckToLeave: FindDeckToLeaveUseCase,
+    private val observeDeckRemovalPreference: ObserveDeckRemovalPreferenceUseCase,
+    private val setDeckRemovalPreference: SetDeckRemovalPreferenceUseCase,
 ) : ViewModel() {
 
     private val editingItemId: String? = savedStateHandle.get<String>(KNOWLEDGE_ID_ARG)
@@ -188,48 +198,109 @@ class AddKnowledgeViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                val original = originalItem
-                if (editingItemId != null && original != null) {
-                    val edited = original.copy(
-                        title = current.title,
-                        type = current.type,
-                        definition = current.definition,
-                        personalNotes = current.personalNotes,
-                        example = current.example.ifBlank { null },
-                        categoryId = current.categoryId,
-                    )
-                    when (val result = updateKnowledgeItem(edited)) {
-                        // Stay in the saving state until the screen closes, so a second tap can't double-save.
-                        is UpdateKnowledgeResult.Updated -> _events.send(AddKnowledgeEvent.Saved)
-                        is UpdateKnowledgeResult.Invalid -> _uiState.update {
-                            it.copy(isSaving = false, fieldErrors = result.errors)
-                        }
-                        UpdateKnowledgeResult.NotFound -> _uiState.update {
-                            it.copy(isSaving = false, saveError = "This item no longer exists.")
-                        }
+                val itemId = editingItemId
+                val oldCategoryId = originalItem?.categoryId
+                val leavingCategory = itemId != null && oldCategoryId != null && oldCategoryId != current.categoryId
+                if (!leavingCategory || itemId == null || oldCategoryId == null) {
+                    save(current, removeFromOldDeck = false)
+                    return@launch
+                }
+
+                // The item leaves a category: does that category's deck hold its card?
+                val deck = findDeckToLeave(itemId, oldCategoryId)
+                if (deck == null) {
+                    save(current, removeFromOldDeck = false)
+                    return@launch
+                }
+                when (observeDeckRemovalPreference().first()) {
+                    DeckRemovalPreference.ASK -> _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            deckRemovalPrompt = DeckRemovalPrompt(itemTitle = current.title.trim(), deckName = deck.name),
+                        )
                     }
-                } else {
-                    val draft = KnowledgeItemDraft(
-                        title = current.title,
-                        type = current.type,
-                        definition = current.definition,
-                        personalNotes = current.personalNotes,
-                        example = current.example.ifBlank { null },
-                        categoryId = current.categoryId,
-                    )
-                    when (val result = saveKnowledgeItem(draft)) {
-                        is SaveKnowledgeResult.Success -> _events.send(AddKnowledgeEvent.Saved)
-                        is SaveKnowledgeResult.Invalid -> _uiState.update {
-                            it.copy(isSaving = false, fieldErrors = result.errors)
-                        }
-                    }
+                    DeckRemovalPreference.ALWAYS_REMOVE -> save(current, removeFromOldDeck = true)
+                    DeckRemovalPreference.ALWAYS_KEEP -> save(current, removeFromOldDeck = false)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to save knowledge item", e)
-                _uiState.update {
-                    it.copy(isSaving = false, saveError = "Couldn't save. Your entry is still here, so try again.")
+                onSaveFailed(e)
+            }
+        }
+    }
+
+    /** The answer to the "remove its card from the deck too?" question. [remember] stores it as the setting. */
+    fun onDeckRemovalChoice(remove: Boolean, remember: Boolean) {
+        val current = _uiState.value
+        if (current.deckRemovalPrompt == null || current.isSaving) return
+        _uiState.update { it.copy(deckRemovalPrompt = null, isSaving = true, saveError = null) }
+        viewModelScope.launch {
+            try {
+                if (remember) {
+                    try {
+                        setDeckRemovalPreference(
+                            if (remove) DeckRemovalPreference.ALWAYS_REMOVE else DeckRemovalPreference.ALWAYS_KEEP,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to store the deck removal choice", e) // the save itself still goes ahead
+                    }
+                }
+                save(current, removeFromOldDeck = remove)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onSaveFailed(e)
+            }
+        }
+    }
+
+    /** Cancels the question and the save; the form stays open with its edits. */
+    fun onDeckRemovalDismissed() = _uiState.update { it.copy(deckRemovalPrompt = null) }
+
+    private fun onSaveFailed(e: Exception) {
+        Log.e(TAG, "Failed to save knowledge item", e)
+        _uiState.update {
+            it.copy(isSaving = false, saveError = "Couldn't save. Your entry is still here, so try again.")
+        }
+    }
+
+    private suspend fun save(current: AddKnowledgeUiState, removeFromOldDeck: Boolean) {
+        val original = originalItem
+        if (editingItemId != null && original != null) {
+            val edited = original.copy(
+                title = current.title,
+                type = current.type,
+                definition = current.definition,
+                personalNotes = current.personalNotes,
+                example = current.example.ifBlank { null },
+                categoryId = current.categoryId,
+            )
+            when (val result = updateKnowledgeItem(edited, removeFromOldDeck)) {
+                // Stay in the saving state until the screen closes, so a second tap can't double-save.
+                is UpdateKnowledgeResult.Updated -> _events.send(AddKnowledgeEvent.Saved)
+                is UpdateKnowledgeResult.Invalid -> _uiState.update {
+                    it.copy(isSaving = false, fieldErrors = result.errors)
+                }
+                UpdateKnowledgeResult.NotFound -> _uiState.update {
+                    it.copy(isSaving = false, saveError = "This item no longer exists.")
+                }
+            }
+        } else {
+            val draft = KnowledgeItemDraft(
+                title = current.title,
+                type = current.type,
+                definition = current.definition,
+                personalNotes = current.personalNotes,
+                example = current.example.ifBlank { null },
+                categoryId = current.categoryId,
+            )
+            when (val result = saveKnowledgeItem(draft)) {
+                is SaveKnowledgeResult.Success -> _events.send(AddKnowledgeEvent.Saved)
+                is SaveKnowledgeResult.Invalid -> _uiState.update {
+                    it.copy(isSaving = false, fieldErrors = result.errors)
                 }
             }
         }

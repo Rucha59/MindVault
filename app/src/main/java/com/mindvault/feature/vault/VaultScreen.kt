@@ -34,9 +34,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +51,7 @@ import com.mindvault.core.theme.MindVaultSpacing
 import com.mindvault.core.ui.components.EmptyState
 import com.mindvault.core.ui.components.MindVaultCard
 import com.mindvault.core.ui.components.MindVaultFilterChip
+import com.mindvault.core.ui.components.MindVaultSearchField
 import com.mindvault.core.ui.components.MindVaultTopBar
 import com.mindvault.domain.model.Category
 import com.mindvault.domain.model.CategoryFilter
@@ -56,7 +59,6 @@ import com.mindvault.domain.model.KnowledgeType
 import com.mindvault.domain.model.VaultEntry
 import com.mindvault.domain.model.VaultSort
 import com.mindvault.feature.knowledge.label
-import com.mindvault.core.ui.components.MindVaultSearchField
 
 /** Library-first Vault: search, type and category filters, sort, and the list of saved items. */
 @Composable
@@ -67,6 +69,26 @@ fun VaultScreen(
     viewModel: VaultViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val actions by viewModel.actions.collectAsStateWithLifecycle()
+    var showRenameDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+
+    // The category chosen in the Category filter, if any: the target of the category menu.
+    val selectedCategory: Category? = (state.query.category as? CategoryFilter.Specific)
+        ?.let { filter -> state.categories.firstOrNull { it.id == filter.categoryId } }
+
+    LaunchedEffect(actions.renameDone) {
+        if (actions.renameDone) {
+            showRenameDialog = false
+            viewModel.onRenameDismissed()
+        }
+    }
+    LaunchedEffect(actions.deleteDone) {
+        if (actions.deleteDone) {
+            showDeleteDialog = false
+            viewModel.onDeleteDismissed()
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
         MindVaultTopBar(
@@ -113,16 +135,49 @@ fun VaultScreen(
                 VaultBrowser(
                     state = state,
                     searchText = viewModel.searchText,
+                    selectedCategory = selectedCategory,
+                    message = actions.message,
                     onSearchChange = viewModel::onSearchChange,
                     onTypeChange = viewModel::onTypeFilterChange,
                     onCategoryChange = viewModel::onCategoryFilterChange,
                     onSortChange = viewModel::onSortChange,
                     onClearFilters = viewModel::onClearFilters,
                     onItemClick = onItemClick,
+                    onRenameCategoryClick = { showRenameDialog = true },
+                    onDeleteCategoryClick = { showDeleteDialog = true },
+                    onCreateDeckClick = { selectedCategory?.let { viewModel.onCreateCategoryDeck(it.id) } },
+                    onMessageDismiss = viewModel::onMessageDismissed,
                     modifier = Modifier.weight(1f),
                 )
             }
         }
+    }
+
+    if (showRenameDialog && selectedCategory != null) {
+        RenameCategoryDialog(
+            initialName = selectedCategory.name,
+            error = actions.renameError,
+            isSaving = actions.isRenaming,
+            onConfirm = { viewModel.onRenameCategory(selectedCategory.id, it) },
+            onDismiss = {
+                showRenameDialog = false
+                viewModel.onRenameDismissed()
+            },
+        )
+    }
+
+    if (showDeleteDialog && selectedCategory != null) {
+        DeleteCategoryDialog(
+            categoryName = selectedCategory.name,
+            deck = state.categoryDecks[selectedCategory.id],
+            error = actions.deleteError,
+            isDeleting = actions.isDeleting,
+            onConfirm = { deleteDeck -> viewModel.onDeleteCategory(selectedCategory.id, deleteDeck) },
+            onDismiss = {
+                showDeleteDialog = false
+                viewModel.onDeleteDismissed()
+            },
+        )
     }
 }
 
@@ -144,12 +199,18 @@ private fun CenteredMessage(
 private fun VaultBrowser(
     state: VaultUiState,
     searchText: String,
+    selectedCategory: Category?,
+    message: String?,
     onSearchChange: (String) -> Unit,
     onTypeChange: (KnowledgeType?) -> Unit,
     onCategoryChange: (CategoryFilter) -> Unit,
     onSortChange: (VaultSort) -> Unit,
     onClearFilters: () -> Unit,
     onItemClick: (String) -> Unit,
+    onRenameCategoryClick: () -> Unit,
+    onDeleteCategoryClick: () -> Unit,
+    onCreateDeckClick: () -> Unit,
+    onMessageDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val query = state.query
@@ -185,7 +246,10 @@ private fun VaultBrowser(
                 }
             }
 
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 val categoryOptions = listOf<CategoryFilter>(CategoryFilter.All, CategoryFilter.Uncategorized) +
                         state.categories.map { CategoryFilter.Specific(it.id) }
                 DropdownSelector(
@@ -206,6 +270,14 @@ private fun VaultBrowser(
                     onSelect = onSortChange,
                     modifier = Modifier.weight(1f),
                 )
+                if (selectedCategory != null) {
+                    CategoryActionsMenu(
+                        hasDeck = state.categoryDecks.containsKey(selectedCategory.id),
+                        onRenameClick = onRenameCategoryClick,
+                        onCreateDeckClick = onCreateDeckClick,
+                        onDeleteClick = onDeleteCategoryClick,
+                    )
+                }
             }
 
             Row(
@@ -223,6 +295,24 @@ private fun VaultBrowser(
                         onClick = onClearFilters,
                         colors = ButtonDefaults.textButtonColors(contentColor = MindVaultColors.Forest),
                     ) { Text("Clear filters") }
+                }
+            }
+
+            message?.let {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MindVaultColors.TextPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = onMessageDismiss,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MindVaultColors.Forest),
+                    ) { Text("OK") }
                 }
             }
         }

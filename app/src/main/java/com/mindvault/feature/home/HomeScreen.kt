@@ -160,6 +160,10 @@ private fun HomeContent(
         )
         return
     }
+    if (summary.dueDecks.isNotEmpty()) {
+        DueDecksSection(summary.dueDecks, onDeckClick = onDeckClick)
+        Spacer(Modifier.height(MindVaultSpacing.space6))
+    }
 
     if (summary.hasStudyStatus) {
         StudySection(summary, onDeckClick = onDeckClick, onFlashcardsClick = onFlashcardsClick)

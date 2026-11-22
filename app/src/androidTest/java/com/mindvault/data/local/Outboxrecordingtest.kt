@@ -11,6 +11,7 @@ import com.mindvault.data.repository.CategoryRepositoryImpl
 import com.mindvault.data.repository.DeckRepositoryImpl
 import com.mindvault.data.repository.FlashcardRepositoryImpl
 import com.mindvault.data.repository.KnowledgeRepositoryImpl
+import com.mindvault.domain.error.DefaultDeckProtectedException
 import com.mindvault.domain.error.DuplicateNameException
 import com.mindvault.domain.model.AddToDeckResult
 import com.mindvault.domain.model.Deck
@@ -31,6 +32,9 @@ import org.junit.runner.RunWith
 /**
  * Checks that every write path records its change in sync_outbox in the same transaction. Uses its own database,
  * preferences and folder, so it never touches the app's real data.
+ *
+ * Every new Vault item also gets a card in the default deck (and the default deck is locked), so the card tests
+ * below use a custom deck.
  */
 @RunWith(AndroidJUnit4::class)
 class OutboxRecordingTest {
@@ -71,21 +75,32 @@ class OutboxRecordingTest {
     private fun draft(title: String, categoryId: String? = null) =
         KnowledgeItemDraft(title = title, type = KnowledgeType.WORD, definition = "def", categoryId = categoryId)
 
-    /** Adds the item to the default deck and returns the new card's ID and creation time (read from its outbox entry). */
+    /** Creates a custom deck, adds the item to it, and returns the new card's ID and creation time. */
     private suspend fun addCard(itemId: String): Pair<String, Long> {
-        assertTrue(flashcards.addToDeck(itemId, Deck.DEFAULT_DECK_ID) is AddToDeckResult.Added)
-        val entry = outbox().first { it.entityType == SyncEntityType.FLASHCARD }
-        return entry.entityId to entry.changedAt
+        val deck = decks.create("Study deck")
+        assertTrue(flashcards.addToDeck(itemId, deck.id) is AddToDeckResult.Added)
+        val card = active.current.flashcardDao().findByItemAndDeck(itemId, deck.id)!!
+        return card.id to card.createdAt
     }
 
     @Test
-    fun creatingAnItemRecordsAnUpsert() = runBlocking {
+    fun creatingAnItemRecordsItAndItsDefaultDeckCard() = runBlocking {
         val item = knowledge.create(draft("Entropy"))
-        val entry = outbox().single()
-        assertEquals(SyncEntityType.KNOWLEDGE_ITEM, entry.entityType)
-        assertEquals(item.id, entry.entityId)
-        assertEquals(SyncOperation.UPSERT, entry.operation)
-        assertEquals(item.updatedAt, entry.changedAt)
+
+        val entries = outbox()
+        val itemEntry = entries.single { it.entityType == SyncEntityType.KNOWLEDGE_ITEM }
+        assertEquals(item.id, itemEntry.entityId)
+        assertEquals(SyncOperation.UPSERT, itemEntry.operation)
+        assertEquals(item.updatedAt, itemEntry.changedAt)
+
+        val card = active.current.flashcardDao().findByItemAndDeck(item.id, Deck.DEFAULT_DECK_ID)
+        assertNotNull("every item gets a card in the default deck", card)
+        assertEquals(SyncOperation.UPSERT, entries.single { it.entityType == SyncEntityType.FLASHCARD }.operation)
+        assertEquals(card!!.id, entries.single { it.entityType == SyncEntityType.REVIEW_STATE }.entityId)
+
+        val state = flashcards.getReviewState(card.id)
+        assertNotNull(state)
+        assertEquals(0, state!!.reviewCount)
     }
 
     @Test
@@ -94,17 +109,19 @@ class OutboxRecordingTest {
         val edited = knowledge.update(item.copy(definition = "new"))
         assertNotNull(edited)
         assertTrue(edited!!.updatedAt > item.updatedAt)
-        assertEquals(edited.updatedAt, outbox().single().changedAt)
+        assertEquals(edited.updatedAt, outbox().single { it.entityType == SyncEntityType.KNOWLEDGE_ITEM }.changedAt)
     }
 
     @Test
     fun deletingAnItemReplacesItsPendingEntryWithADelete() = runBlocking {
         val item = knowledge.create(draft("Entropy"))
         knowledge.delete(item.id)
-        val entry = outbox().single()
+        val entry = outbox().single { it.entityType == SyncEntityType.KNOWLEDGE_ITEM }
         assertEquals(item.id, entry.entityId)
         assertEquals(SyncOperation.DELETE, entry.operation)
         assertNull(knowledge.getById(item.id))
+        // The item's cards go with it (database cascade).
+        assertNull(active.current.flashcardDao().findByItemAndDeck(item.id, Deck.DEFAULT_DECK_ID))
     }
 
     @Test
@@ -116,12 +133,12 @@ class OutboxRecordingTest {
     @Test
     fun categoryCreateAndRenameRecordUpserts() = runBlocking {
         val category = categories.create("Science")
-        assertEquals(SyncOperation.UPSERT, outbox().single().operation)
-        assertEquals(category.createdAt, outbox().single().changedAt)
+        val created = outbox().single { it.entityType == SyncEntityType.CATEGORY }
+        assertEquals(SyncOperation.UPSERT, created.operation)
+        assertEquals(category.createdAt, created.changedAt)
 
         categories.rename(category.id, "Natural science")
-        val entry = outbox().single()
-        assertEquals(SyncEntityType.CATEGORY, entry.entityType)
+        val entry = outbox().single { it.entityType == SyncEntityType.CATEGORY }
         assertTrue(entry.changedAt > category.createdAt)
         assertEquals(entry.changedAt, active.current.categoryDao().getById(category.id)!!.updatedAt)
     }
@@ -166,14 +183,15 @@ class OutboxRecordingTest {
         val item = knowledge.create(draft("Entropy"))
         val (cardId, createdAt) = addCard(item.id)
 
-        val byType = outbox().associateBy { it.entityType }
-        assertEquals(cardId, byType.getValue(SyncEntityType.FLASHCARD).entityId)
-        assertEquals(cardId, byType.getValue(SyncEntityType.REVIEW_STATE).entityId)
+        val entries = outbox()
+        assertTrue(entries.any { it.entityType == SyncEntityType.FLASHCARD && it.entityId == cardId })
+        assertTrue(entries.any { it.entityType == SyncEntityType.REVIEW_STATE && it.entityId == cardId })
         assertEquals(createdAt, active.current.reviewStateDao().getByFlashcardId(cardId)!!.updatedAt)
 
         // Adding the same item to the same deck again changes nothing.
         val before = outbox().size
-        assertEquals(AddToDeckResult.AlreadyInDeck, flashcards.addToDeck(item.id, Deck.DEFAULT_DECK_ID))
+        val deckId = active.current.flashcardDao().getById(cardId)!!.deckId
+        assertEquals(AddToDeckResult.AlreadyInDeck, flashcards.addToDeck(item.id, deckId))
         assertEquals(before, outbox().size)
     }
 
@@ -189,7 +207,7 @@ class OutboxRecordingTest {
         val stored = active.current.reviewStateDao().getByFlashcardId(cardId)!!
         assertEquals(1, stored.reviewCount)
         assertTrue(stored.updatedAt > firstStamp)
-        val entry = outbox().first { it.entityType == SyncEntityType.REVIEW_STATE }
+        val entry = outbox().first { it.entityType == SyncEntityType.REVIEW_STATE && it.entityId == cardId }
         assertEquals(stored.updatedAt, entry.changedAt)
     }
 
@@ -198,15 +216,35 @@ class OutboxRecordingTest {
         val item = knowledge.create(draft("Entropy"))
         val (cardId, _) = addCard(item.id)
         flashcards.removeFromDeck(cardId)
-        val entry = outbox().first { it.entityType == SyncEntityType.FLASHCARD }
+        val entry = outbox().first { it.entityType == SyncEntityType.FLASHCARD && it.entityId == cardId }
         assertEquals(SyncOperation.DELETE, entry.operation)
         assertNull(flashcards.getReviewState(cardId))
     }
 
     @Test
-    fun theSeededDefaultDeckNeverWinsAConflictUntilItIsRenamed() = runBlocking {
+    fun aCardCannotBeRemovedFromTheDefaultDeck() = runBlocking {
+        val item = knowledge.create(draft("Entropy"))
+        val cardId = active.current.flashcardDao().findByItemAndDeck(item.id, Deck.DEFAULT_DECK_ID)!!.id
+        try {
+            flashcards.removeFromDeck(cardId)
+            fail("expected DefaultDeckProtectedException")
+        } catch (expected: DefaultDeckProtectedException) {
+        }
+        assertNotNull(active.current.flashcardDao().getById(cardId))
+        assertEquals(SyncOperation.UPSERT, outbox().first { it.entityType == SyncEntityType.FLASHCARD }.operation)
+    }
+
+    @Test
+    fun theDefaultDeckCannotBeRenamedAndKeepsItsStartingUpdatedAt() = runBlocking {
         assertEquals(0L, active.current.deckDao().getById(Deck.DEFAULT_DECK_ID)!!.updatedAt)
-        decks.rename(Deck.DEFAULT_DECK_ID, "My cards")
-        assertTrue(active.current.deckDao().getById(Deck.DEFAULT_DECK_ID)!!.updatedAt > 0L)
+        try {
+            decks.rename(Deck.DEFAULT_DECK_ID, "My cards")
+            fail("expected DefaultDeckProtectedException")
+        } catch (expected: DefaultDeckProtectedException) {
+        }
+        val deck = active.current.deckDao().getById(Deck.DEFAULT_DECK_ID)!!
+        assertEquals(Deck.DEFAULT_DECK_NAME, deck.name)
+        assertEquals(0L, deck.updatedAt)
+        assertTrue(outbox().isEmpty())
     }
 }

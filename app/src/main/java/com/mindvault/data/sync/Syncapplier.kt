@@ -137,16 +137,24 @@ internal class SyncApplier(
             return
         }
 
+        // A deck can belong to a category. If that category lost a same-name merge, use the one that was kept.
+        val rawCategory = row.str("category_id")
+        val category = resolveCategory(rawCategory)
+        val redirected = rawCategory != null && category != null && category != rawCategory
+        val finalUpdatedAt = if (redirected) bump(updatedAt) else updatedAt
+
         val incoming = DeckEntity(
             id = id,
             name = name,
             isDefault = local?.isDefault ?: (row.bool("is_default") ?: false),
             createdAt = local?.createdAt ?: createdAt,
-            updatedAt = updatedAt,
+            updatedAt = finalUpdatedAt,
+            categoryId = category,
         )
         val clash = store.deckByName(name)?.takeIf { it.id != id }
         if (clash == null) {
             writeDeck(incoming, local != null)
+            if (redirected) enqueue(SyncEntityType.DECK, id, SyncOperation.UPSERT, finalUpdatedAt)
             return
         }
 
@@ -157,7 +165,7 @@ internal class SyncApplier(
             else -> !isOlder(incoming.createdAt, incoming.id, clash.createdAt, clash.id)
         }
         if (renameIncoming) {
-            val renamed = incoming.copy(name = freeDeckName(name), updatedAt = bump(updatedAt))
+            val renamed = incoming.copy(name = freeDeckName(name), updatedAt = bump(incoming.updatedAt))
             writeDeck(renamed, local != null)
             enqueue(SyncEntityType.DECK, id, SyncOperation.UPSERT, renamed.updatedAt)
         } else {
@@ -165,6 +173,7 @@ internal class SyncApplier(
             store.updateDeck(renamed)
             enqueue(SyncEntityType.DECK, clash.id, SyncOperation.UPSERT, renamed.updatedAt)
             writeDeck(incoming, local != null)
+            if (redirected) enqueue(SyncEntityType.DECK, id, SyncOperation.UPSERT, finalUpdatedAt)
         }
     }
 

@@ -738,21 +738,329 @@ Push/pull engine, conflict resolution on pull, first full upload, WorkManager, s
 9. Delete account: cloud rows are gone (unchanged behavior).
 10. Force-stop the app with pending changes, reopen: they upload.
 
-## Entry 19 — Phase 8a: SM-2 scheduler (pure domain logic)
+## Entry 19 — Flashcards V2, Phase 1 of 3: SM-2 scheduling logic, new-card limit setting, reset of existing cards
 
-**Status:** Written, not built.
+**Status:** Written, not built. Nothing here is Verified until a note says so.
 
-**Goal:** Modular spaced-repetition scheduler, independent of Room and UI, so FSRS can replace SM-2 later by swapping one binding.
+**Goal:** Spaced repetition for flashcards (SM-2). Phase 1 adds the logic layer only (scheduler, review queues, session logic, settings storage, data reset). Phase 2 adds the rated Review screen and the deck screen's Review section. Phase 3 adds the Home "Due for review" rows and the Profile setting.
 
-### Files created (under `…/mindvault/`)
-`domain/scheduling/{ReviewRating,SchedulingState,ReviewScheduler,Sm2Scheduler}.kt`; `app/src/test/…/domain/scheduling/Sm2SchedulerTest.kt`.
+### Decisions (confirmed)
+- SM-2 behind a `ReviewScheduler` interface; FSRS move planned in `docs/FSRS_MIGRATION_PLAN.md`.
+- Ratings: Again / Hard / Good / Easy. **Again loops in the same session**; a card's schedule is set by its **first** rating in the session. Repeats only decide when the card leaves the session.
+- Due = **by calendar day** (device time zone): a card is due if `nextReviewAt` is before the start of tomorrow.
+- New cards: first rating Again 1d, Hard 1d, Good 2d, Easy 4d. Later: Again 1d; Hard max(prev+1, prev×1.2); Good prev×ease; Easy prev×ease×1.3. Ease: Again −0.20, Hard −0.15, Good 0, Easy +0.15, clamped 1.3–3.0. Interval cap 365 days.
+- **Difficult Cards** = reviewed at least once and ease factor below 2.0 (no lapse count, no schema change).
+- **Daily new-card limit: 20 per deck per day**, stored as a setting (DataStore, per device, default 20, range 1–100). Cards introduced today are counted from existing review state (`reviewCount == 1` and `lastReviewedAt` today), so nothing new is stored and the count follows the card across devices.
+- **Practice (Review All) records nothing**: no ratings, no review count, no schedule change.
+- Deck "complete" and Home "decks completed today" keep their current rules.
+- Review history log: postponed to a later phase.
+
+### Database and migration impact
+- Room **v2 -> v3**, `MIGRATION_2_3`: **no table or column changes**. It resets every review state to a new card (`reviewCount 0`, `lastReviewedAt` NULL, `nextReviewAt` now, ease 2.5, interval 0) and sets `updatedAt = MAX(updatedAt + 1, now)` so the reset wins sync conflicts. It then writes a `REVIEW_STATE` UPSERT into `sync_outbox` for every row so the cloud receives the reset. Vault items, decks, cards and categories are untouched.
+- Runs on the guest vault and on every account vault the first time each is opened.
+- Building the app exports `app/schemas/com.mindvault.data.local.database.MindVaultDatabase/3.json`: **commit it** (the migration test needs it).
+- No Supabase change, no new dependency.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Purpose |
+|---|---|
+| `domain/model/ReviewModels.kt` | `ReviewRating`, `ReviewMode`, `ReviewCounts` |
+| `domain/model/ReviewSession.kt` | Pure rated-session logic (flip, answer, Again loop, tally) |
+| `domain/scheduler/ReviewScheduler.kt` | `ReviewScheduler` interface and `Sm2Scheduler` |
+| `domain/usecase/ReviewQueueBuilder.kt` | Pure due / new / difficult queues and counts |
+| `domain/usecase/NewCardsPerDayUseCases.kt` | Observe and set the daily new-card limit |
+| `core/di/SchedulerModule.kt` | Binds `ReviewScheduler` to `Sm2Scheduler` |
+| `app/src/test/.../domain/scheduler/Sm2SchedulerTest.kt`, `.../domain/usecase/ReviewQueueBuilderTest.kt`, `.../domain/model/ReviewSessionTest.kt`, `.../domain/usecase/RecordCardReviewUseCaseTest.kt` | Unit tests |
+
+### Files modified
+`domain/usecase/RecordCardReviewUseCase.kt` (now takes a rating and uses the scheduler), `domain/repository/SettingsRepository.kt`, `data/repository/SettingsRepositoryImpl.kt`, `data/local/database/Migrations.kt`, `data/local/database/MindVaultDatabase.kt` (version 3), `feature/flashcards/StudyViewModel.kt` (Practice no longer saves reviews), `feature/flashcards/StudyScreen.kt` (Practice wording), tests `FakeSettingsRepository.kt`, `MigrationTest.kt`.
+
+### Known effects
+- After the update every existing card shows as "not reviewed" and "decks completed today" drops to 0 until cards are rated again. This is the intended reset.
+- The new-card limit is per device (not synced); the count of cards introduced today is derived from synced review state.
+- Until Phase 2 there is no rating UI: the Study screen is Practice only.
+
+### Not built in Phase 1
+Review screen and rating buttons, deck Review section, Home due rows, Profile setting, review history log, FSRS.
+
+
+### Entry 19 — Phase 2 of 3 (append under Entry 19): rated Review screen and deck Review section
+
+**Status:** Written, not built. Phase 1 is verified (developer-reported: builds and tests pass).
+
+**Goal:** Let the user actually do spaced repetition: rate cards, loop Again cards, and start Daily / New / Difficult reviews from the deck screen. Practice stays as it was (flip only, records nothing).
+
+### Database, dependencies, setup
+No schema change, no migration, no new dependency, no Supabase change.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Purpose |
+|---|---|
+| `domain/usecase/ObserveDeckReviewCountsUseCase.kt` | Live due / new / difficult counts for one deck (uses the daily limit setting) |
+| `domain/usecase/LoadReviewQueueUseCase.kt` | One-off snapshot of the cards for a review mode (`ReviewQueue`) |
+| `feature/flashcards/ReviewUiState.kt` | Loading / Error / Empty / Active |
+| `feature/flashcards/ReviewViewModel.kt` | Loads the queue, saves each card's first rating, drives `ReviewSession` |
+| `feature/flashcards/ReviewScreen.kt` | Card, Show answer, rating buttons with next-interval previews, Again repeats, summary |
+| `app/src/test/.../domain/usecase/ObserveDeckReviewCountsUseCaseTest.kt` | Counts follow the limit |
+
+### Files modified
+`core/navigation/MindVaultDestination.kt` (`REVIEW_MODE_ARG`, `Review` route), `core/navigation/MindVaultNavHost.kt` (Review route, deck screen gets `onReviewClick`), `feature/flashcards/DeckDetailScreen.kt` (Review section, Study renamed Practice), `feature/flashcards/DeckDetailViewModel.kt` (exposes `reviewCounts`), `feature/flashcards/StudyScreen.kt` (one word: `FlashcardFace` is now `internal` so Review reuses it).
 
 ### Key decisions
-- SM-2 variant with four ratings; Again = 10-minute relearn, repetitions reset, ease -0.20 (floor 1.3).
-- Hard x1.2 (min +1 day); Good 1 → 6 → x ease; Easy x ease x 1.3; Hard < Good < Easy enforced; ease cap 3.0; interval cap 36,500 days.
-- Intervals of 1+ days land on local midnight (zone passed in), so "due today" is a date comparison.
-- Mastered = interval >= 21 days. Difficult = last rating Again or Hard.
-- No schema change, no dependency, no UI change in this phase.
+- **Separate Review route** (`flashcards/review/{deckId}/{mode}`) so Practice and rated review never share state. Bottom bar stays hidden, like Study.
+- **Snapshot per session:** the queue is read once when the screen opens, so cards never reshuffle mid-session. Cards rated today leave the counts on the deck screen as soon as they are saved.
+- **Save before advancing:** a card's first rating is saved, then the session moves on. If saving fails the card stays, a message is shown and the buttons work again. Repeat cards (after Again) save nothing.
+- **Repeat cards** show only "Again" and "Got it"; they only decide whether the card leaves the session.
+- **Rating buttons** show the next interval (for example "Good · 2d"); Good uses the primary button, the others the secondary button, so meaning never rests on color alone.
+- **Deck screen:** a Review card (Daily review with its count, New cards, Difficult) above Practice and Shuffle. Buttons are disabled when their count is 0, and a caught-up message replaces the count.
+- Practice, Shuffle, Add cards, remove card, rename and delete behave as before.
 
-### Not built
-Room columns (repetitions, lastRating), migration 2→3, cloud/sync changes, review modes, rating UI, statistics, docs updates (Phase 8b).
+### Known limits
+- The counts do not refresh at midnight; they update on the next change or when the screen is reopened.
+- No ViewModel or Compose tests (no ViewModel test setup in the project yet).
+- Home due rows and the Profile setting are Phase 3; until then the daily limit is the 20 default.
+
+### Manual checks
+1. Open a deck with cards: the Review card shows e.g. "0 due · 8 new" (new cards capped at 20), Practice and Shuffle still work and change nothing.
+2. Daily review: Show answer, then rate. Buttons show intervals (New card: Again 1d, Hard 1d, Good 2d, Easy 4d). Rate Again: that card returns at the end with only "Again / Got it".
+3. Finish: the summary lists the Again / Hard / Good / Easy counts. Back on the deck screen the card now counts as reviewed, due 0, and the daily count dropped.
+4. Rate 20+ new cards in one day in one deck: "New cards" shows 0 afterwards.
+5. Rate a card Again three times (over three days, or by editing test data): it appears under Difficult cards.
+6. Airplane mode is not needed (local only); signed in, the ratings upload (Profile status).
+
+Entry 19 — Phase 3 of 3 (append under Entry 19): Home due rows, Profile setting, repeat-card change
+
+Status: Written, not built. Phases 1 and 2 are verified (developer-reported).
+
+Change to Phase 2 (repeat cards): a card marked Again comes back once more at the end of the session and now asks Hard / Good / Easy (no Again this time), instead of "Again / Got it". The answer is saved and sets when the card returns: Hard 1 day, Good 2 days, Easy 3 days. A relearn answer changes only the interval and due date; ease and review count are untouched, so one lapse is never penalised twice and the "new cards introduced today" count stays correct. Because Again is not offered on the repeat, every card is seen at most twice per session.
+
+Goal of Phase 3: show decks with cards to review on Home, and add the daily new-card limit as a Profile setting that can be removed by deleting one line.
+
+Database, dependencies, setup
+
+No schema change, no migration, no new dependency, no Supabase change.
+
+Files created (under app/src/main/java/com/mindvault/)
+File	Purpose
+feature/home/DueDecksSection.kt	"Due for review" rows on Home (deck name and cards to review; tap opens the deck)
+feature/profile/NewCardsPerDayViewModel.kt	Observes and saves the daily new-card limit
+feature/profile/NewCardsPerDaySetting.kt	Self-contained "Flashcards" settings block (5, 10, 20, 30, 50)
+app/src/test/.../domain/usecase/ReviewRelearnTest.kt	Relearn intervals and saving
+Files modified
+
+domain/scheduler/ReviewScheduler.kt (relearn methods), domain/usecase/RecordCardReviewUseCase.kt (relearn), domain/model/HomeSummary.kt (DeckDue, dueDecks), domain/usecase/HomeSummaryBuilder.kt, domain/usecase/ObserveHomeSummaryUseCase.kt, feature/flashcards/ReviewViewModel.kt, feature/flashcards/ReviewScreen.kt; one inserted block each in feature/home/HomeScreen.kt and feature/profile/ProfileScreen.kt.
+
+Key decisions
+Home shows a deck only when it has cards to review today (due reviews plus new cards still allowed). The existing Continue studying / Start studying / decks completed today rows are unchanged.
+The Profile setting lives in its own composable and ViewModel. To remove it, delete the single NewCardsPerDaySetting() line in ProfileScreen.kt; the stored value, the 20 default and everything else keep working.
+The limit is per device (DataStore), not synced.
+Known limits
+Counts on Home and the deck screen do not refresh at midnight; they update on the next change or when the screen is reopened.
+No ViewModel or Compose tests.
+Reviewing the same card more than once in one day through Difficult cards can compound its interval; a fix is pending a product decision (see conversation).
+
+Entry 19 — Phase 4 (append under Entry 19): Difficult cards any time, extra practice for cards that are not due
+
+Status: Written, not built. Phases 1-3 are verified (developer-reported) except Phase 3, which is awaiting the build result.
+
+Goal: Let the user review difficult cards again even after a Daily review, without distorting the SM-2 schedule. Reviewing a card that is not due and rating it as if it were due makes its interval grow as if a full gap had passed (rating the same card Good three times in one day gives 2d, 4d, 8d).
+
+Behaviour
+Difficult cards (reviewed cards with ease factor below 2.0) can be opened at any time.
+A difficult card that is due today or overdue is rated normally (Again / Hard / Good / Easy), exactly like Daily review, including the Again repeat.
+A difficult card that is not due (for example one just reviewed today) is extra practice: it shows "Still hard" and "Got it", and nothing is saved or rescheduled. "Still hard" puts the card back at the end of the session; "Got it" removes it.
+Due difficult cards are listed before extra ones, each group hardest (lowest ease) first.
+The summary reports scheduled reviews and extra practice separately.
+Daily review, New cards and Practice are unchanged.
+Database, dependencies, setup
+
+No schema change, no migration, no new dependency, no Supabase change.
+
+Files modified (under app/src/main/java/com/mindvault/)
+
+domain/usecase/ReviewQueueBuilder.kt (extraCardIds, due-first ordering for Difficult), domain/model/ReviewSession.kt (isExtra, answerExtra, extraCount, progress), domain/usecase/LoadReviewQueueUseCase.kt (ReviewQueue.extraCardIds), feature/flashcards/ReviewViewModel.kt (onExtraAnswer, guard), feature/flashcards/ReviewScreen.kt (extra note and buttons, summary).
+
+Files created
+
+app/src/test/.../domain/usecase/DifficultExtraPracticeTest.kt.
+
+Known limits
+Whether a card is extra is decided when the session starts; a card rated during the session is not re-evaluated.
+"Still hard" can loop a card as often as the user wants; the user ends the session by choosing "Got it" or going back.
+Extra practice leaves no record (the review history log is a later phase).
+Manual checks
+Review a due difficult card in Daily review (rate Again so its ease drops below 2.0), then open Difficult cards: it appears as extra practice with "Still hard / Got it" and a note that the schedule won't change.
+After "Got it", leave and reopen the deck: the card's due date is unchanged.
+With one due difficult card and one extra card, Difficult cards lists the due one first and rates it with the four buttons.
+"Still hard" brings the card back at the end; "Got it" finishes it.
+Documentation to adjust
+
+In the Phase 3 entry's Known limits (and V2_DOC_UPDATES.md copy), remove the bullet about compounding intervals; it is resolved here. In IMPLEMENTATION_STATUS.md §7 Next Task, the difficult-cards decision is done: the next task is the review history log.
+
+Entry 19 — follow-up (append under Entry 19): Difficult cards threshold
+
+Status: Written, not built.
+
+Problem: "Difficult cards" is disabled (shows 0) until a card's ease factor drops below 2.0. Ease only drops on Again (-0.20) and Hard (-0.15), starting from 2.5, so a card needs about three Again/Hard ratings on three different days to qualify. In practice the option looked broken and could not be used right after a Daily review.
+
+Change: a reviewed card is difficult when its ease factor is below the starting ease (2.5), i.e. it has been rated Again or Hard more than Easy. One Again or Hard is enough. Good keeps the ease unchanged and Easy raises it, so those cards are not difficult. The threshold is now tied to ReviewState.DEFAULT_EASE_FACTOR instead of a separate number.
+
+Files modified
+
+domain/usecase/ReviewQueueBuilder.kt (DIFFICULT_EASE_BELOW), test ReviewQueueBuilderTest.kt (one card changed from ease 2.0 to 2.5).
+
+No schema, dependency or sync change.
+Documentation to adjust
+
+In Entry 19 Phase 4 and in IMPLEMENTATION_STATUS.md §6, replace "ease factor below 2.0" with "ease factor below the starting ease (2.5)".
+
+Manual checks
+In a deck, rate one new card Again or Hard in Daily review. The deck's "Difficult (n)" button now shows 1 and opens.
+A card rated Good or Easy is not counted.
+Opening Difficult cards right after the Daily review lists that card as extra practice ("Still hard" / "Got it") with no schedule change.
+
+## Entry 20 — Default deck holds every Vault item, category decks (Phase 1 of 3)
+
+**Status:** Written, not built. Phases 1-4 of Flashcards V2 (Entry 19) are verified (developer-reported) apart from the latest Difficult-cards fix and Phase 3/4 items still awaiting your build result.
+
+**Overall goal (3 phases):**
+1. **Default deck** contains every Vault item automatically and is locked (this entry).
+2. **Category decks:** every category gets a deck with its items; items join automatically; Room v4 -> v5 adds `decks.categoryId`; Supabase column and sync updates.
+3. **Vault category menu:** Rename category, Delete category (asks keep or delete the deck), Create flashcard deck; "remove from the old category's deck?" dialog (with "remember my choice") and a Profile setting for it.
+
+### Confirmed decisions (all phases)
+| # | Decision |
+|---|---|
+| 1 | A deck is created automatically for every category (new and existing). The Vault option "Create flashcard deck" appears only for a category that has no deck, and recreates it with the category's items. |
+| 2 | Items join their category's deck automatically (when saved with the category or moved into it). |
+| 3 | Taking an item out of a category asks "Also remove from the <category> deck? Its review progress there will be lost." with Remove / Keep and a "Remember my choice" checkbox. A Profile setting chooses: Ask me each time (default), Always remove, Always keep. Moving between categories always adds the card to the new category's deck. |
+| 4 | **Default deck:** holds every Vault item; cards are added automatically for new items and once for existing items; cannot be renamed or deleted; cards cannot be added or removed by hand (they leave only when the item is deleted). |
+| 5 | Decks get a `categoryId` link (Room migration, Supabase column, sync updates). |
+| 6 | Deleting a category asks whether to keep or delete its deck. |
+| 7 | Renaming a category renames its deck, unless the deck was given a different name. |
+| 8 | A name clash creates the category deck as "Name (2)". |
+| 9 | The Vault gets a category menu: Rename, Delete, Create flashcard deck. |
+| 10 | The same item can have a card in the default deck and in its category deck, each with its own schedule. |
+
+This supersedes the earlier decision that the default deck can be renamed.
+
+### Phase 1: what changes
+- **New items** get a flashcard (and its starting review state) in the default deck in the same transaction as the item, and both are queued for sync.
+- **Existing items** get a default-deck card once, through Room migration **v3 -> v4** (data only, no table or column changes). Cards are created with the item's creation date so new cards come oldest first; the daily new-card limit (default 20 per deck) keeps the default deck from flooding. Existing cards and their progress are untouched. The new cards are queued for sync.
+- **Default deck locked:** rename is blocked in the repository and hidden in the UI; removing a card from it is blocked in the repository and hidden in the UI; the "Add cards" button is hidden. It still cannot be deleted. Deleting a Vault item still removes its cards from every deck.
+- The "Add to flashcards" sheet shows the default deck as "Already added".
+
+### Database, dependencies, setup
+- Room version 4, `MIGRATION_3_4`. Building exports `app/schemas/.../4.json`: **commit it**.
+- No new dependency, no Supabase change in this phase.
+
+### Files modified (under `app/src/main/java/com/mindvault/`)
+`data/repository/KnowledgeRepositoryImpl.kt`, `data/repository/DeckRepositoryImpl.kt`, `data/repository/FlashcardRepositoryImpl.kt`, `domain/repository/DeckRepository.kt` (doc only), `data/local/database/Migrations.kt`, `data/local/database/MindVaultDatabase.kt`, `feature/flashcards/DeckDetailScreen.kt`. Test `OutboxRecordingTest.kt` rewritten for the new rules.
+
+### Files created
+`app/src/androidTest/.../data/local/DefaultDeckBackfillMigrationTest.kt`.
+
+### Known limits
+- An item that arrives from a device still on an older app version has no default-deck card until it is created by that device's update; this phase does not repair it.
+- Items from before this update get cards as new cards, so the default deck can show many new cards; the daily limit applies.
+- A user who already renamed the default deck keeps that name; it cannot be changed again.
+
+### Manual checks
+1. Install over the previous build: Flashcards > Default deck now lists every Vault item, all "not reviewed".
+2. Add a new item: it appears in the default deck immediately.
+3. Default deck screen: no rename icon, no Add cards button, no remove icon on cards; Practice, Shuffle and Review still work.
+4. Delete a Vault item: its card disappears from the default deck and any other deck.
+5. Signed in: Profile shows changes waiting, then Synced.
+
+
+### Entry 20 — Phase 2 of 3 (append under Entry 20): category decks
+
+**Status:** Written, not built. Phase 1 is verified (developer-reported).
+
+**Goal:** Every category has a flashcard deck with the category's name, created automatically; items join it automatically; the deck is a normal customisable deck. Phase 3 adds the Vault category menu and the "remove from the old deck?" dialog.
+
+### Behaviour
+- **Creating a category** creates its deck (name = category name; if a deck already has that name the deck is "Name (2)", "Name (3)"...) and links it with `decks.categoryId`. Existing categories get a deck, with cards for all their items, through the migration.
+- **Items join the deck:** saving an item with a category, or moving an item into a category, adds its card to that category's deck (as a new card). The item's card in its previous category's deck is left alone (Phase 3 adds the question).
+- **Renaming a category** renames its deck too, unless the user gave the deck a different name.
+- **Deleting a category** keeps its deck as an ordinary deck (the link is cleared). Phase 3 asks whether to keep or delete the deck.
+- **A deck the user deleted is not recreated** when more items are saved in that category. The repository method `DeckRepository.ensureCategoryDeck(categoryId)` recreates it with all the category's items (used by the Vault option in Phase 3).
+- Category decks are normal decks: rename, delete, add and remove cards, review, practice. Changing a deck never changes the Vault.
+
+### Database and migration impact
+- Room **v4 -> v5**, `MIGRATION_4_5`: adds the nullable column `decks.categoryId` (foreign key to `categories.id`, ON DELETE SET NULL, indexed), then creates one deck per existing category with a card (new card, starting review state) for each of its items, and queues all of it for sync. Nothing existing is changed or deleted. Building exports `app/schemas/.../5.json`: **commit it**.
+- **Supabase:** `docs/supabase_sync_schema.sql` is replaced by the updated file (adds `decks.category_id`, its foreign key, and updates `sync_push` and `sync_pull`). **Run it in the dev project first, then prod, before running the new app version signed in.** It is safe to run again.
+- No new dependency.
+
+### Sync rules added
+- A deck row carries `category_id`. A category that no longer exists (or was merged away) becomes "no category"; a deck pointing at a category that lost a same-name merge is re-pointed to the kept category and uploaded again (same rule as items).
+- Deleting a category clears the link on its decks in the cloud, keeping their `updated_at`.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+`data/repository/CategoryDecks.kt`; tests `app/src/androidTest/.../data/local/CategoryDecksTest.kt`, `.../CategoryDecksMigrationTest.kt`, `app/src/test/.../data/sync/SyncApplierDeckCategoryTest.kt`.
+
+### Files modified
+`domain/model/Deck.kt`, `data/local/entity/DeckEntity.kt`, `data/local/dao/DeckDao.kt`, `data/mapper/DeckMappers.kt`, `domain/repository/DeckRepository.kt`, `data/repository/{Knowledge,Category,Deck}RepositoryImpl.kt`, `data/local/database/Migrations.kt`, `data/local/database/MindVaultDatabase.kt` (version 5), `data/sync/SyncWire.kt`, `data/sync/SyncApplier.kt` (`deck`), tests `FakeSyncLocalStore.kt`, `FakeSyncRemote.kt`, `MigrationTest.kt`, `OutboxRecordingTest.kt`.
+
+### Known limits
+- Items re-pointed by a category merge do not get a card in the kept category's deck.
+- An item moved out of a category keeps its card in that category's deck until Phase 3.
+- The link lives on the deck, so if two devices create the same category offline, one category (and its link) is merged away and its deck stays as an ordinary deck.
+
+### Manual checks
+1. Install over the previous build: every existing category now has a deck with its name and cards for its items (Flashcards tab).
+2. Create a new category in the Add form: a deck with that name appears.
+3. Save an item in that category: its card is in the category deck and in the default deck.
+4. Edit an item and move it into a category: the card appears in that deck.
+5. Rename the category: the deck is renamed. Rename the deck yourself first, then rename the category: the deck keeps your name.
+6. Delete the deck, save another item in the category: the deck is not recreated.
+7. Signed in: Profile shows changes waiting, then Synced; the deck row in Supabase has `category_id`.
+
+### Entry 20 — Phase 3 of 3 (append under Entry 20): Vault category menu and "remove from the old deck?"
+
+**Status:** Written, not built. Phases 1 and 2 are verified (developer-reported).
+
+**Goal:** Manage categories from the Vault (rename, delete with a keep-or-delete-deck choice, create the deck for a category that has none) and let the user decide what happens to an item's card in the old category's deck when the item leaves a category.
+
+### Behaviour
+- **Vault category menu:** when one category is selected in the Vault's Category filter, a "⋮" button appears next to the filters with **Rename category**, **Create flashcard deck** (only when the category has no deck) and **Delete category**.
+  - Rename: the category's deck follows the new name unless the user gave the deck a different name (Phase 2 rule).
+  - Delete: the category's items stay in the Vault as Uncategorized. If the category has a deck, the dialog asks: **Keep the deck** (default; it becomes an ordinary deck) or **Delete the deck too** (its cards and review progress are lost). The Vault filter returns to All.
+  - Create flashcard deck: creates the deck with the category's name (a number is added if the name is taken) and a card for each of its items.
+- **Taking an item out of a category** (changing its category or clearing it in the Edit form): if the item has a card in the old category's deck, the app asks "Remove from the “Science” deck too? Its review progress in that deck will be lost." with **Remove from deck**, **Keep in deck** and a **Remember my choice** checkbox. Tapping outside the dialog cancels the save and keeps the form open. The item's card in the default deck and in other decks is never touched. Moving the item into another category always adds its card to that category's deck.
+- **Profile setting** "When I take an item out of a category": **Ask me each time** (default), **Always remove it from the deck**, **Always keep it in the deck**. The "Remember my choice" checkbox writes this setting. The setting is one self-contained block: delete or comment out the single `CategoryDeckSetting()` line in `ProfileScreen.kt` to hide it (the default "Ask me each time" keeps working).
+
+### Database, dependencies, setup
+No schema change, no migration, no Supabase change, no new dependency.
+
+### Key decisions
+- The item update and the card removal are one transaction, so a failed save never removes a card and a removal never happens without the save.
+- A card is never removed without the user's choice (or a stored "always remove" setting).
+- Deleting a category with its deck: the deck is looked up first, then the category is deleted, then the deck; if deleting the deck fails the deck simply stays as an ordinary deck.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+`domain/model/DeckRemovalPreference.kt`, `domain/model/CategoryResults.kt`, `domain/usecase/CategoryManagementUseCases.kt`, `domain/usecase/DeckRemovalUseCases.kt`, `feature/vault/CategoryManagement.kt`, `feature/knowledge/DeckRemovalDialog.kt`, `feature/profile/DeckRemovalViewModel.kt`, `feature/profile/DeckRemovalSetting.kt`; tests `app/src/test/.../domain/usecase/CategoryManagementUseCasesTest.kt`, `app/src/androidTest/.../data/local/CategoryDeckRemovalTest.kt`.
+
+### Files modified
+`domain/repository/{Knowledge,Deck,Settings}Repository.kt`, `data/repository/{Knowledge,Deck,Settings}RepositoryImpl.kt`, `data/repository/CategoryDecks.kt`, `domain/usecase/UpdateKnowledgeItemUseCase.kt`, `feature/vault/{VaultScreen,VaultUiState,VaultViewModel}.kt`, `feature/knowledge/{AddKnowledgeUiState,AddKnowledgeViewModel}.kt`, one inserted block each in `feature/knowledge/AddKnowledgeScreen.kt` and `feature/profile/ProfileScreen.kt`; tests `FakeRepositories.kt`, `FakeSettingsRepository.kt`.
+
+### Known limits
+- Cancelling the "remove from deck?" dialog keeps the form open with the edits; nothing is saved.
+- Items re-pointed by a sync category merge do not get cards in the kept category's deck.
+- The "Remember my choice" setting is per device (DataStore), not synced.
+- No ViewModel or Compose tests.
+
+### Manual checks
+1. Vault > choose a category in the Category filter: a "⋮" button appears. Rename: the Vault filter and the deck both show the new name (unless you renamed the deck).
+2. Delete a category with a deck: choose Keep, and the deck remains under Flashcards, no longer tied to a category; items show as Uncategorized. Repeat choosing Delete the deck too, and the deck is gone.
+3. Delete a category deck from Flashcards, then Vault > that category > ⋮ > Create flashcard deck: the deck returns with all the category's items.
+4. Edit an item, clear its category, Save: the dialog appears (deck holds its card). Choose Keep: the card stays. Repeat with Remove: the card leaves that deck but stays in the default deck.
+5. Tick "Remember my choice": the dialog stops appearing; Profile shows the stored choice and can switch back to "Ask me each time".
+6. Edit an item, move it from category A to B: B's deck gets its card; A's deck asks (or follows the setting).
+7. Signed in: Profile shows changes waiting, then Synced.
+
+### Documentation to adjust
+- `IMPLEMENTATION_STATUS.md`: add rows "Default deck holds every Vault item", "Category decks" and "Vault category management" (Written, unverified until built); add the Room schema 5 and the `decks.category_id` Supabase column to §2/§6; record decisions 1-10 of Entry 20; §7 Next Task: review history log.
+- `ARCHITECTURE.md` §6: `Deck` gains an optional `categoryId` (category deck); the default deck is locked (no rename, no manual add or remove of cards).
+- `DESIGN_SYSTEM.md` §7.2 Vault: category filter with a "⋮" menu (Rename, Create flashcard deck, Delete); §7.8 Profile: "When I take an item out of a category" setting.
+- `docs/supabase_sync_schema.sql`: already replaced in Phase 2.

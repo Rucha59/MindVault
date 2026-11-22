@@ -9,6 +9,7 @@ internal fun DeckEntity.toDomain() = Deck(
     isDefault = isDefault,
     createdAt = createdAt,
     updatedAt = updatedAt,
+    categoryId = categoryId,
 )
 
 internal fun Deck.toEntity() = DeckEntity(
@@ -17,4 +18,5 @@ internal fun Deck.toEntity() = DeckEntity(
     isDefault = isDefault,
     createdAt = createdAt,
     updatedAt = updatedAt,
+    categoryId = categoryId,
 )

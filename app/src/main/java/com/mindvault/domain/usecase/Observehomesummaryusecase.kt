@@ -1,5 +1,7 @@
 package com.mindvault.domain.usecase
 
+import com.mindvault.core.util.nowMillis
+import com.mindvault.domain.model.DeckDue
 import com.mindvault.domain.model.DeckSummary
 import com.mindvault.domain.model.HomeSummary
 import com.mindvault.domain.repository.FlashcardRepository
@@ -19,12 +21,14 @@ class ObserveHomeSummaryUseCase @Inject constructor(
     private val observeVaultItems: ObserveVaultItemsUseCase,
     private val observeDeckSummaries: ObserveDeckSummariesUseCase,
     private val flashcardRepository: FlashcardRepository,
+    private val observeNewCardsPerDay: ObserveNewCardsPerDayUseCase,
 ) {
     operator fun invoke(): Flow<HomeSummary> = combine(
         observeVaultItems(),
         decksWithCompletedToday(),
-    ) { entries, (decks, completedToday) ->
-        HomeSummaryBuilder.build(entries, decks, completedToday)
+        dueDecks(),
+    ) { entries, (decks, completedToday), due ->
+        HomeSummaryBuilder.build(entries, decks, completedToday, due)
     }
 
     private fun decksWithCompletedToday(): Flow<Pair<List<DeckSummary>, Int>> =
@@ -40,6 +44,25 @@ class ObserveHomeSummaryUseCase @Inject constructor(
                         }
                     },
                 ) { flags -> decks to flags.count { it } }
+            }
+        }
+
+    /** Decks that have cards to review today (due reviews plus new cards still allowed), in deck order. */
+    private fun dueDecks(): Flow<List<DeckDue>> =
+        observeDeckSummaries().flatMapLatest { decks ->
+            if (decks.isEmpty()) {
+                flowOf(emptyList())
+            } else {
+                combine(
+                    decks.map { summary ->
+                        combine(
+                            flashcardRepository.observeByDeck(summary.deck.id),
+                            observeNewCardsPerDay(),
+                        ) { cards, limit ->
+                            DeckDue(summary.deck, ReviewQueueBuilder.counts(cards, limit, nowMillis()).dailyTotal)
+                        }
+                    },
+                ) { due -> due.filter { it.cardsToReview > 0 } }
             }
         }
 

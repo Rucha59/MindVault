@@ -1,6 +1,7 @@
 package com.mindvault.domain.usecase
 
 import com.mindvault.domain.model.CategoryCount
+import com.mindvault.domain.model.DeckDue
 import com.mindvault.domain.model.DeckSummary
 import com.mindvault.domain.model.FlashcardDetail
 import com.mindvault.domain.model.HomeSummary
@@ -16,6 +17,7 @@ object HomeSummaryBuilder {
         entries: List<VaultEntry>,
         decks: List<DeckSummary>,
         decksCompletedToday: Int,
+        dueDecks: List<DeckDue> = emptyList(),
     ): HomeSummary {
         val categoryCounts = entries
             .groupingBy { it.categoryName ?: UNCATEGORIZED }
@@ -32,6 +34,7 @@ object HomeSummaryBuilder {
                 .take(IN_PROGRESS_LIMIT),
             hasUnstartedDeck = decks.any { it.totalCards > 0 && it.reviewedCards == 0 },
             decksCompletedToday = decksCompletedToday,
+            dueDecks = dueDecks,
         )
     }
 
