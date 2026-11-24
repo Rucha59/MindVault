@@ -543,18 +543,15 @@ stored or retrieved data, not placeholders presented as facts.
 
 ### 7.8 Profile and Settings
 
-**Purpose:** Provide app preferences and basic management.
+Purpose: Provide app preferences and basic management.
 
--   Access Profile from the Home app bar or established navigation.
--   Settings should be reachable from Profile.
--   Use standard list rows with icons, labels, and supporting text where
-    useful.
--   Include only implemented settings. Do not show nonfunctional sync,
-    account, notification, or theme toggles.
--   Keep visual styling consistent with the same palette and component
-    rules.
--   Flashcards" section with "New cards per deck per day" (5, 10, 20, 30, 50; default 20).
-## 8. Interaction and component states
+Access Profile from the Home app bar or established navigation.
+Settings should be reachable from Profile.
+Use standard list rows with icons, labels, and supporting text where useful.
+Include only implemented settings. Do not show nonfunctional sync, account, notification, or theme toggles.
+Keep visual styling consistent with the same palette and component rules.
+Flashcards" section with "New cards per deck per day" (5, 10, 20, 30, 50; default 20).
+"Search" section with a "Search suggestions" switch (default on; says that typing is sent to Wiktionary and Wikipedia) and "Clear recent searches" when there are any.## 8. Interaction and component states
 
 Every interactive component must define the following states as
 relevant:

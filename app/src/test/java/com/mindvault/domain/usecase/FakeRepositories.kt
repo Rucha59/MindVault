@@ -3,6 +3,7 @@ package com.mindvault.domain.usecase
 import com.mindvault.domain.model.Category
 import com.mindvault.domain.model.KnowledgeItem
 import com.mindvault.domain.model.KnowledgeItemDraft
+import com.mindvault.domain.model.KnowledgeType
 import com.mindvault.domain.repository.CategoryRepository
 import com.mindvault.domain.repository.KnowledgeRepository
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,8 @@ class FakeKnowledgeRepository(initial: List<KnowledgeItem> = emptyList()) : Know
     override suspend fun getById(id: String): KnowledgeItem? = items.value.firstOrNull { it.id == id }
     override suspend fun findByTitle(title: String): KnowledgeItem? =
         items.value.firstOrNull { it.title.equals(title, ignoreCase = true) }
+    override suspend fun findByTitleAndType(title: String, type: KnowledgeType): KnowledgeItem? =
+        items.value.firstOrNull { it.title.equals(title.trim(), ignoreCase = true) && it.type == type }
 
     override suspend fun create(draft: KnowledgeItemDraft): KnowledgeItem {
         created += draft

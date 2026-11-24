@@ -123,9 +123,9 @@ fun MindVaultNavHost() {
                             launchSingleTop = true
                         }
                     },
-                    onEditBeforeSaveClick = { title, definition, example ->
+                    onEditBeforeSaveClick = { title, definition, example, type ->
                         navController.navigate(
-                            MindVaultDestination.AddKnowledgeFromSearch.createRoute(title, definition, example),
+                            MindVaultDestination.AddKnowledgeFromSearch.createRoute(title, definition, example, type),
                         ) { launchSingleTop = true }
                     },
                 )
@@ -219,7 +219,7 @@ fun MindVaultNavHost() {
             }
             composable(
                 route = MindVaultDestination.AddKnowledgeFromSearch.route,
-                arguments = listOf(PREFILL_TITLE_ARG, PREFILL_DEFINITION_ARG, PREFILL_EXAMPLE_ARG).map { name ->
+                arguments = listOf(PREFILL_TITLE_ARG, PREFILL_DEFINITION_ARG, PREFILL_EXAMPLE_ARG, PREFILL_TYPE_ARG).map { name ->
                     navArgument(name) {
                         type = NavType.StringType
                         nullable = true

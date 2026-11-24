@@ -1064,3 +1064,235 @@ No schema change, no migration, no Supabase change, no new dependency.
 - `ARCHITECTURE.md` §6: `Deck` gains an optional `categoryId` (category deck); the default deck is locked (no rename, no manual add or remove of cards).
 - `DESIGN_SYSTEM.md` §7.2 Vault: category filter with a "⋮" menu (Rename, Create flashcard deck, Delete); §7.8 Profile: "When I take an item out of a category" setting.
 - `docs/supabase_sync_schema.sql`: already replaced in Phase 2.
+
+## Entry 21 — Search V2, Phase 1 of 3: Wiktionary + Wikipedia search, ranking, concept cards, save as WORD/CONCEPT
+
+**Status:** Built and working (developer-reported). Follow-up change after the first build: the source footnote is no longer added to the saved text (see "Change after build" below).
+
+**Goal:** Replace the interim Free Dictionary Search with Wiktionary (words) and Wikipedia (concepts). Filter All / Words / Concepts; "All" queries both at the same time. Ranked results, compact cards that expand, partial failure with Retry per source, Save / Edit first for words and concepts. Phase 2 adds autocomplete, recent searches and the Profile setting. Phase 3 adds R8 rules, polish and the docs.
+
+### Decisions (confirmed)
+1. No server; integrations live in `data/remote`. English only for now (bilingual later). No AI. No keyed APIs.
+2. In `All`, words and concepts appear in one list, each tagged Word or Concept; exact matches of both kinds first, then prefix, then contains, then the rest.
+3. Word cards: definitions grouped by part of speech, plus examples. No pronunciation, synonyms or etymology (Wiktionary's definition endpoint does not return them).
+4. Concept card: title, short description, summary, link to the article.
+5. The source (name, licence, link) is shown as a footnote on the Search card only. It is **not** part of the saved text, because the definition also appears on flashcards. **No schema change.** (Original decision was a source line at the end of the saved definition; replaced, see below.)
+6. Duplicate rule is title + type: a word and a concept with the same title can both be saved. `findByTitle` is unchanged; `findByTitleAndType` was added.
+7. Wikimedia rules: descriptive User-Agent, in-memory cache + HTTP cache, back-off on 429/503, at most 2 requests in flight.
+8. Free Dictionary code stays untouched as "V1"; switching back is one line in `RepositoryModule.kt`.
+
+### Database, dependencies, setup
+- **No Room schema change, no migration, no Supabase change, no new dependency.** The new DAO query uses the existing `type` column.
+- **Before any public release, replace `CONTACT`** in `core/di/WikimediaModule.kt` with a project email address or website URL. It is sent in the User-Agent of every request.
+- Delete nothing. `DatabaseModule.kt` and all `freedictionary/*` files are untouched.
+
+### What the real API responses showed (and how the code handles it)
+- Wiktionary `page/definition/{term}`: a map of language code to sections. The `"en"` list also holds other languages, so only `language == "English"` is kept. `definition` is HTML (tags, entities, empty label spans); a definition with sub-senses embeds them in an `<ol>` and the sub-senses also appear as separate entries, so text is cut at `<ol>` and the parent's example list (a union of its children's) is ignored. Empty definitions are dropped. Sections with the same part of speech are merged. A missing word is HTTP 404 → "no result". Terms are case-sensitive, so a miss on a capitalised query is retried in lower case.
+- Wikipedia `search/page`: `pages[]` with `key`, `title`, `description`. Disambiguation hits (title ends "(disambiguation)", or description "Topics referred to by the same term") are dropped.
+- Wikipedia `page/summary/{title}`: `type`, `title`, `description`, `extract`, `content_urls.desktop.page`. Only `type == "standard"` with text is kept (Mercury, a disambiguation page, is dropped).
+- Request budget per search in `All`: 1 Wiktionary + 1 Wikipedia search + summaries for the top 2 hits = 4 requests. The other concept cards show title + description and load their summary when opened, saved or edited first.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Purpose |
+|---|---|
+| `domain/model/SearchScope.kt` | `SearchSource` (WORDS / CONCEPTS) and `SearchScope` (ALL / WORDS / CONCEPTS) |
+| `domain/usecase/RankSearchResultsUseCase.kt` | Pure ranking and de-duplication |
+| `domain/usecase/LoadConceptSummaryUseCase.kt` | Loads a concept's summary on demand |
+| `data/remote/ConceptDataSource.kt` | Seam for the concept source (Wikipedia) |
+| `data/remote/wikimedia/WikimediaDto.kt` | DTOs and the lenient `WikimediaJson` |
+| `data/remote/wikimedia/WiktionaryApi.kt`, `WikipediaApi.kt` | Retrofit interfaces |
+| `data/remote/wikimedia/HtmlText.kt` | HTML → plain text (no dependency) |
+| `data/remote/wikimedia/WikimediaUrls.kt` | Source names, licence, hosts, article URLs |
+| `data/remote/wikimedia/WiktionaryMapper.kt`, `WikipediaMapper.kt` | DTO → domain mapping |
+| `data/remote/wikimedia/WiktionaryDataSource.kt`, `WikipediaDataSource.kt` | The two data sources |
+| `data/remote/wikimedia/SearchCache.kt` | In-memory cache (5 min, 50 entries) |
+| `data/remote/wikimedia/WikimediaInterceptors.kt` | User-Agent interceptor, `BackoffPolicy`, `BackoffInterceptor` |
+| `data/repository/WikimediaSearchRepository.kt` | V2 repository: error mapping, caching |
+| `core/di/WikimediaModule.kt` | Wikimedia OkHttp client (`@Named("wikimedia")`), APIs, bindings |
+| Tests (under `app/src/test/java/com/mindvault/`) | `domain/usecase/{RankSearchResultsUseCaseTest,LoadConceptSummaryUseCaseTest}.kt`, `data/remote/wikimedia/{HtmlTextTest,WiktionaryMapperTest,WikipediaMapperTest,SearchCacheTest,BackoffTest}.kt`, `data/repository/WikimediaSearchRepositoryTest.kt` |
+
+### Files modified / replaced
+| File | Change |
+|---|---|
+| `domain/model/SearchResult.kt` | Replaced. Additive fields (`kind`, `description`, `summary`, `sourceUrl`, `license`, `needsSummary`), `savedItemKey`, type-aware `toSaveContent` with the source line |
+| `domain/model/SearchOutcome.kt` | Replaced. Adds `Busy` (HTTP 429/503) |
+| `domain/repository/SearchRepository.kt` | Replaced. `search(query, source)` and `loadSummary(result)` |
+| `domain/usecase/SearchDefinitionsCase.kt` | Replaced. Runs the chosen sources in parallel; returns one outcome per source |
+| `domain/usecase/SaveSearchResultUseCase.kt`, `ObserveSavedTitlesUseCase.kt` | Replaced. Title + type duplicate rule; keys are `TYPE:title` |
+| `domain/repository/KnowledgeRepository.kt`, `data/repository/KnowledgeRepositoryImpl.kt`, `data/local/dao/KnowledgeItemDao.kt` | Added `findByTitleAndType` (existing methods untouched) |
+| `data/repository/SearchRepositoryImpl.kt` | Replaced. V1 adapted to the new interface (words only) |
+| `core/di/RepositoryModule.kt` | Binds `WikimediaSearchRepository`. For V1, bind `SearchRepositoryImpl` instead |
+| `core/navigation/MindVaultDestination.kt`, `MindVaultNavHost.kt` | New `PREFILL_TYPE_ARG`; "Edit first" passes the type |
+| `feature/knowledge/AddKnowledgeViewModel.kt` | Reads the prefill type (two small insertions) |
+| `feature/search/Searchuistate.kt`, `Searchviewmodel.kt`, `SearchScreen.kt`, `Searchresultcard.kt` | Replaced. Filters, notices with Retry, expandable cards |
+| Tests | `FakeRepositories.kt` (one new method), `Searchtestsupport.kt`, `Savesearchresultusecasetest.kt`, `Searchdefinitionsusecasetest.kt`, `Observesavedtitlesusecasetest.kt`, `Searchrepositoryimpltest.kt`, `Searchresulttest.kt` (was an empty class), `Searchviewmodeltest.kt` |
+
+### Key behaviour
+- **Partial failure:** each source has its own outcome. If one fails, the other's results show with a notice ("Couldn't reach Wikipedia, so concepts are missing") and a Retry for that source only. If every source fails, one full-screen message (offline, or busy/error) with Try again.
+- **Save needs the real summary:** a concept card below the top 2 has no summary yet. Opening it, Save or Edit first loads the summary first. If that fails, nothing is saved and the card says so.
+- **Filter change** after a search runs the search again for the new sources (cached answers return instantly).
+- **Back-off:** on 429/503 wait 1 s then 2 s (or the server's Retry-After if ≤ 3 s), at most 2 retries. After a final 429, no requests for 30 s (or Retry-After, 5–120 s); the notice shows "busy".
+- Saved items go through `KnowledgeRepository.create`, so they still get their default-deck card.
+- The saved text contains no source information (see above).
+
+### Change after build: source is a card footnote only
+`SearchResult.toSaveContent()` no longer appends `Source: ...` to the definition. Save and "Edit first" now carry just the definition (words: `(noun) text` lines; concepts: the summary). The card still shows "Source: Wikipedia · CC BY-SA 4.0" and, when expanded, "Open on Wikipedia". Files: `domain/model/SearchResult.kt`; tests `Searchresulttest.kt`, `Savesearchresultusecasetest.kt`, `Searchviewmodeltest.kt` updated. Items saved before this change keep the source line in their definition; edit them to remove it. If the source should be kept with a saved item later, it needs real `sourceName`/`sourceUrl` fields (Room v6, Supabase columns, sync changes) so it can be shown on the item detail screen only. Not done.
+
+### Known limits
+- Wikimedia's global API limits are new and may change. It is not confirmed whether the 200 requests/minute for an identified client is counted per IP or per User-Agent. Contact Wikimedia before launch (see the note in the Phase 3 docs).
+- Wiktionary lists words of many languages; only the English section is shown.
+- A concept whose summary fails to load can be retried but not saved; one with no usable summary (404, disambiguation) is dropped.
+- Searching "All" for a very common word returns only the top 5 Wikipedia hits.
+- Strings are hardcoded, as elsewhere. No Compose/UI tests.
+
+### Likely compile-fix spots
+`SearchScreen.kt` / `Searchresultcard.kt` (token names `ShapeMedium`, `ShapeSmall`, `MindVaultColors.SurfaceVariant`), `WikimediaModule.kt` (Hilt qualifier on the binding, `BuildConfig` import), `BackoffTest.kt` (OkHttp `Response.Builder`), `WiktionaryMapperTest.kt` / `WikipediaMapperTest.kt` (`decodeFromString` import).
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+```
+Record the real output. If a test fails, paste the failure and the file.
+
+### Manual checks
+1. Search "run" with All: a Word card (Wiktionary) and Concept cards (Wikipedia) appear, each tagged; "Show more" on the word shows all senses and examples.
+2. Search "entropy": the word entropy and the concept Entropy rank first; "Entropy (disambiguation)" never appears; Mercury shows planet/element pages but no list page.
+3. Filter Words: only Wiktionary results. Filter Concepts: only Wikipedia. Changing the filter re-runs the search.
+4. Save the concept "Entropy" and the word "entropy": both save (type Concept / Word); each card then says "Already in your Vault" for its own type only. Open the saved item: the text has no source line.
+5. "Edit first" on a concept: the form opens with Concept selected and the summary filled in.
+6. Open a concept card that was not in the top 2: "Loading summary…" then the summary. Save it directly (without opening): it saves with the summary.
+7. Airplane mode, then search: full-screen "Can't connect". Online again, Try again works.
+8. Block only one source (for example turn off the network after Wiktionary answered, then retry a concept search) or simulate: the other source's results stay, a notice with Retry shows, and Retry fills it in.
+9. Search "zzqxv": "Nothing found" with Add a concept.
+10. Existing flows: manual Add, Vault, Flashcards, Profile behave as before; a saved search result has a card in the default deck.
+11. Switch to V1 (bind `SearchRepositoryImpl` in `RepositoryModule`): word search works as before, Concepts shows "Nothing found".
+
+### Next
+Phase 2: autocomplete (2 characters, 300 ms), recent searches (last 4), Profile setting "Search suggestions". Phase 3: R8 keep rules, attribution polish, rewrite `docs/SEARCH_PROVIDER.md`, update `IMPLEMENTATION_STATUS.md`, `ARCHITECTURE.md`, `DESIGN_SYSTEM.md`.
+
+## Entry 21 — Phase 2 of 3 (append under Entry 21): autocomplete, recent searches, Profile "Search suggestions" setting
+
+**Status:** Written, not built in Android Studio. Phase 1 is built and working (developer-reported). Nothing here is Verified until you report a real build and test run.
+What was checked outside your project (sandbox, Kotlin 2.0.21 compiler against small stand-ins for Android, Compose, Hilt, Retrofit, JUnit, kotlinx.serialization.json and the coroutines test library): the new domain, parser, repository and ViewModel code compiled and 126 tests (Phase 1 and 2 together) ran and passed there, with real-time waits instead of virtual time. That is **not** your Gradle build. Not checked at all: Compose UI (`SearchScreen`, `SearchSuggestionsSetting`), Hilt wiring, DataStore (`Settingsrepositoryimpl`), Retrofit decoding of the `JsonElement` response, `BackoffTest`, and the mapper tests that decode JSON.
+
+**Goal:** Suggest complete words and concept titles while typing; remember the last 4 successful searches and show them when the field is empty; a Profile setting to switch suggestions off.
+
+### Behaviour
+- **Suggestions:** start after 2 characters and a 300 ms pause in typing, only from the sources the filter allows (All = both). Every keystroke cancels the pending request, so fast typing sends one request per source. Results of the two sources are interleaved, de-duplicated ignoring case, an exact match first, at most 6. Tapping a suggestion runs the search (with the current filter). No suggestions are shown for the text that was just searched; typing again brings them back. A source that fails simply gives no suggestions (no error message).
+- **Where they show:** while the search field is focused, suggestions replace the results area; with an empty focused field, the recent searches show instead ("Recent searches" with Clear). Pressing Search or tapping a row removes focus and shows the results.
+- **Recent searches:** the last 4, newest first, repeated searches move up (case ignored). Only a search that found something is remembered. Stored on this device (DataStore), not tied to an account, cleared with "Clear" on the list or "Clear recent searches" in Profile.
+- **Profile > Search:** a switch "Search suggestions" (default on) with a note that typing is sent to Wiktionary and Wikipedia, plus "Clear recent searches" when there are any. One self-contained block: delete or comment out the single `SearchSuggestionsSetting()` line in `ProfileScreen.kt` to hide it (suggestions then stay on).
+- Switching the filter while text is typed refreshes the suggestions for the new sources (or re-runs the search if one was already submitted).
+
+### Database, dependencies, setup
+No Room schema change, no migration, no Supabase change, no new dependency. Two new DataStore keys: `search_suggestions_enabled` (Boolean, default true) and `recent_searches` (one string, one search per line).
+
+### Endpoints
+Both suggestion sources use MediaWiki `action=opensearch` (`https://en.wiktionary.org/w/api.php?action=opensearch&format=json&search=...&limit=6` and the same on en.wikipedia.org). The Wiktionary response was verified from your sample (`[query, [titles], [descriptions], [urls]]`); the Wikipedia one is assumed to have the same shape (standard MediaWiki format). The parser returns no titles instead of failing on any other shape, and drops titles ending "(disambiguation)" for Wikipedia. Wiktionary's title search also suggests words of other languages ("entendre"); searching one may end in "Nothing found". Only the first part of a suggestion's life (typing) is sent to Wikimedia.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Purpose |
+|---|---|
+| `domain/model/RecentSearches.kt` | Pure add / de-duplicate / cap-at-4 logic |
+| `domain/usecase/SuggestSearchTermsUseCase.kt` | Autocomplete: parallel sources, interleave, de-dupe, exact first, cap |
+| `domain/usecase/SearchSuggestionUseCases.kt` | Observe/set the setting, observe/add/clear recent searches |
+| `data/remote/SuggestionDataSource.kt` | Seam for autocomplete sources |
+| `data/remote/wikimedia/OpenSearchParser.kt` | Reads the opensearch response |
+| `feature/profile/SearchSuggestionsSetting.kt`, `SearchSuggestionsViewModel.kt` | The Profile block |
+| Tests (under `app/src/test/java/com/mindvault/`) | `domain/model/RecentSearchesTest.kt`, `domain/usecase/SuggestSearchTermsUseCaseTest.kt`, `data/remote/wikimedia/OpenSearchParserTest.kt` |
+
+### Files modified / replaced
+| File | Change |
+|---|---|
+| `domain/model/SearchResult.kt` | `SearchLimits` gains `MIN_SUGGESTION_LENGTH`, `SUGGESTION_DEBOUNCE_MILLIS`, `MAX_SUGGESTIONS` (and the source-footnote change of Phase 1) |
+| `domain/repository/SearchRepository.kt` | Adds `suggest(query, source)` (best effort, never throws except cancellation) |
+| `domain/repository/SettingsRepository.kt`, `data/repository/Settingsrepositoryimpl.kt` | Suggestions on/off, recent searches |
+| `data/repository/WikimediaSearchRepository.kt` | Constructor takes two suggestion sources; `suggest` with its own cache. **Four constructor parameters now** |
+| `data/repository/SearchRepositoryImpl.kt` | V1: `suggest` returns an empty list |
+| `data/remote/wikimedia/WiktionaryApi.kt`, `WikipediaApi.kt` | `openSearch` (returns `JsonElement`) |
+| `data/remote/wikimedia/WiktionaryDataSource.kt`, `WikipediaDataSource.kt` | Also implement `SuggestionDataSource` |
+| `core/di/WikimediaModule.kt` | Two `@Named` bindings for the suggestion sources |
+| `feature/profile/ProfileScreen.kt` | One Spacer + the `SearchSuggestionsSetting()` line, after `CategoryDeckSetting()` |
+| `feature/search/Searchuistate.kt`, `Searchviewmodel.kt`, `SearchScreen.kt` | `suggestions` and `recentSearches` in the state; debounce, suppression after a search, recent searches; suggestion and recent lists in the screen. `SearchViewModel` has five new constructor parameters |
+| Tests | `Fakesettingsrepository.kt` (new members), `Searchtestsupport.kt` (`suggest`), `Searchrepositoryimpltest.kt`, `WikimediaSearchRepositoryTest.kt`, `Searchviewmodeltest.kt` (15 new tests) |
+
+### Known limits
+- Suggestions are an extra 1–2 requests per pause in typing. They are cached for 5 minutes and cancelled when typing continues; the 200 requests/minute Wikimedia limit is not a concern for one user, but see the Phase 1 note about launch-scale counting.
+- Recent searches are per device, shared by guest and every account on it. Clear them with the Clear buttons.
+- Suggestions come from the titles Wikimedia has (prefix match), so a misspelling gets none.
+- The ViewModel's debounce is tested with the coroutines test library's virtual time (`advanceTimeBy`); the screen's focus handling has no automated test.
+
+### Likely compile-fix spots
+`SearchScreen.kt` (new imports, `SearchBody` extension), `SearchSuggestionsSetting.kt` (`toggleable`, `Switch`), `Settingsrepositoryimpl.kt` (`booleanPreferencesKey` import), `WikimediaModule.kt` (two `@Named` bindings of the same implementation), `WiktionaryApi.kt` / `WikipediaApi.kt` (`JsonElement` return type with the Retrofit converter), `OpenSearchParserTest.kt` (`parseToJsonElement`).
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+```
+Record the real output.
+
+### Manual checks
+1. Search tab, All filter: type "en" and pause: a short list of suggestions appears (words and concepts mixed). Type one more letter quickly several times: the list updates once you pause, not per letter.
+2. Tap a suggestion: the field fills, the keyboard closes, the search runs, the list disappears.
+3. Filter Words: suggestions are Wiktionary words only. Filter Concepts: titles only (no "(disambiguation)").
+4. Type one character: no suggestions. Clear the field: no suggestions.
+5. After a search for "entropy", tap the field again without typing: the results stay, no list covers them. Add a letter: suggestions return.
+6. Do 5 searches that find something: tap the empty field: the last 4 show, newest first, with a Clear button. Tap one: it runs. Search a nonsense word: it is not added.
+7. Profile > Search: turn "Search suggestions" off: typing shows no suggestions (searching still works; recent searches still show). Turn it on again. "Clear recent searches" empties the list (the button disappears).
+8. Airplane mode while typing: no list, no error message.
+9. Close and reopen the app: the setting and the recent searches are still there.
+10. Existing flows (Add, Vault, Flashcards, Profile settings) unchanged; saved search results still get their default-deck card.
+
+### Next
+Phase 3: R8 keep rules for the new DTOs, attribution polish, rewrite `docs/SEARCH_PROVIDER.md`, update `IMPLEMENTATION_STATUS.md`, `ARCHITECTURE.md`, `DESIGN_SYSTEM.md`.
+
+## Entry 21 — Phase 3 of 3 (append under Entry 21): R8 rules, source not in the saved text, docs
+
+**Status:** Written, not built. Phase 1 is built and working (developer-reported). Phase 2 is written and awaiting your build. Nothing here is Verified until you report a real build, test run and release (R8) check.
+
+**Goal:** Release-build safety for the new Search classes, confirm the saved definition carries no source text, and bring the docs in line with Search V2.
+
+### Source is not in the saved text
+Done in the Phase 1 follow-up and re-checked here: `SearchResult.toSaveContent()` returns only the definition (words: `(noun) text` lines; concepts: the summary). No code path appends a source. "Edit first" opens the form with the same text. The card still shows "Source: Wikipedia · CC BY-SA 4.0" and, expanded, an "Open on Wikipedia/Wiktionary" link; that stays on the card only. Search for `Source: ` in `app/src/main` finds only that card label.
+Existing items saved before the change keep a `Source: …` line at the end of their definition. Remove it by editing the item (Vault → item → Edit). There is no automatic cleanup (it would need a data migration and sync changes); say so if you have many items and want one.
+
+### Database, dependencies, setup
+No schema change, no migration, no Supabase change, no new dependency.
+
+### Files modified / created
+| File | Change |
+|---|---|
+| `app/proguard-rules.pro` | Appended keep rules for the Search DTOs: `*$$serializer`, `Companion` and `serializer(...)` of `com.mindvault.data.remote.**` (covers V1 and V2), and the `Signature`/annotation attributes Retrofit needs for generic return types. Your existing rules are unchanged |
+| `docs/SEARCH_PROVIDER.md` | Rewritten for V2: endpoints and real response shapes, layering, Wikimedia rules, rate-limit research, licensing and privacy notes, switching back to V1, release checklist |
+| `ARCHITECTURE.md` | Search feature description, the "External Search and saving" flow, navigation, testing and "not designed yet" lines. Based on the copy in the project files; diff it against your current copy |
+| `DESIGN_SYSTEM.md` | §7.4 Search rewritten (filters, suggestions, recent searches, cards, notices); §7.8 gets the "Search" settings line. Based on the copy in the project files |
+| `docs/IMPLEMENTATION_STATUS_SEARCH_V2_ADDITIONS.md` | Rows and sections to merge into your `IMPLEMENTATION_STATUS.md` (the project copy is older than the code, so it was not rewritten) |
+
+### Key points
+- The R8 rules are the standard kotlinx.serialization rules scoped to `com.mindvault.data.remote.**`. The libraries also ship their own rules; these are belt and braces. They are **unverified** until a release build is run.
+- Attribution: the card shows source name, licence and link. For release also add an About / licences screen and update the privacy policy and Play data-safety form (search text is sent to Wikimedia). Both are listed in the checklist in `docs/SEARCH_PROVIDER.md`; neither is built.
+- Reminder: replace `CONTACT` in `core/di/WikimediaModule.kt` before release, and contact Wikimedia about the rate limit for a mobile app.
+
+### Known limits
+- No R8/release verification yet.
+- `ARCHITECTURE.md` and `DESIGN_SYSTEM.md` outputs are based on the project-file copies; if your local copies have newer edits, merge the changed sections instead of replacing the files.
+
+### How to check the R8 rules
+A signed release build needs your keystore (`keystore.properties`). Without one, temporarily set `isMinifyEnabled = true` (and `isShrinkResources = true`) in the `debug` build type of `app/build.gradle.kts`, run `gradlew.bat assembleDebug`, install, and then revert the change.
+1. Word search ("run"), concept search ("entropy"), All filter: results appear (a crash or "Search isn't working" on every query means a DTO was stripped or renamed).
+2. Save a word and a concept; "Edit first" on a concept.
+3. Type "en" and pause: suggestions appear. Profile > Search switch works.
+4. Search the V1 words path if you switch back (bind `SearchRepositoryImpl`).
+   If something fails, paste `adb logcat` lines for `SearchVM`, `WikimediaSearch` and any `SerializationException`.
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+```
+Record the real output.
+
+### Next
+Build and test Phase 2 and these rules, fix what they report; then the review history log, language editions for Search, and the launch items above (contact address, Wikimedia contact, privacy policy, About screen).

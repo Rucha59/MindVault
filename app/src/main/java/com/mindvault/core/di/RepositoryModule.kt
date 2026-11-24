@@ -5,6 +5,7 @@ import com.mindvault.data.repository.DeckRepositoryImpl
 import com.mindvault.data.repository.FlashcardRepositoryImpl
 import com.mindvault.data.repository.KnowledgeRepositoryImpl
 import com.mindvault.data.repository.SearchRepositoryImpl
+import com.mindvault.data.repository.WikimediaSearchRepository
 import com.mindvault.domain.repository.CategoryRepository
 import com.mindvault.domain.repository.DeckRepository
 import com.mindvault.domain.repository.FlashcardRepository
@@ -31,6 +32,8 @@ abstract class RepositoryModule {
     @Binds @Singleton
     abstract fun bindFlashcardRepository(impl: FlashcardRepositoryImpl): FlashcardRepository
 
+    // Search V2 (Wiktionary words + Wikipedia concepts). To switch back to V1 (Free Dictionary, words only),
+    // bind SearchRepositoryImpl here instead; nothing else changes.
     @Binds @Singleton
-    abstract fun bindSearchRepository(impl: SearchRepositoryImpl): SearchRepository
+    abstract fun bindSearchRepository(impl: WikimediaSearchRepository): SearchRepository
 }

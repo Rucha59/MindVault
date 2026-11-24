@@ -26,3 +26,12 @@
 -dontwarn org.slf4j.**
 -dontwarn java.lang.management.**
 -dontwarn io.ktor.**
+
+# Search (V1 Free Dictionary and V2 Wiktionary/Wikipedia): the response classes are read by kotlinx.serialization
+# and described to Retrofit through generic types (for example Map<String, List<...Dto>>). Release builds
+# (R8) must keep their generated serializers and the generic signatures. UNVERIFIED until a release/R8 build is run.
+-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
+-keep,includedescriptorclasses class com.mindvault.data.remote.**$$serializer { *; }
+-keepclassmembers class com.mindvault.data.remote.** { *** Companion; }
+-keepclasseswithmembers class com.mindvault.data.remote.** { kotlinx.serialization.KSerializer serializer(...); }
+-dontnote kotlinx.serialization.AnnotationsKt

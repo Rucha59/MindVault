@@ -13,6 +13,7 @@ import com.mindvault.data.mapper.toEntity
 import com.mindvault.domain.model.Deck
 import com.mindvault.domain.model.KnowledgeItem
 import com.mindvault.domain.model.KnowledgeItemDraft
+import com.mindvault.domain.model.KnowledgeType
 import com.mindvault.domain.repository.KnowledgeRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,6 +38,9 @@ class KnowledgeRepositoryImpl @Inject constructor(
 
     override suspend fun findByTitle(title: String): KnowledgeItem? =
         active.current.knowledgeItemDao().findByTitle(title.trim())?.toDomain()
+
+    override suspend fun findByTitleAndType(title: String, type: KnowledgeType): KnowledgeItem? =
+        active.current.knowledgeItemDao().findByTitleAndType(title.trim(), type.name)?.toDomain()
 
     /** Also gives the item a card in the default deck and in its category's deck, in the same transaction. */
     override suspend fun create(draft: KnowledgeItemDraft): KnowledgeItem {

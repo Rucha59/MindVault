@@ -8,6 +8,7 @@ import com.mindvault.core.navigation.KNOWLEDGE_ID_ARG
 import com.mindvault.core.navigation.PREFILL_DEFINITION_ARG
 import com.mindvault.core.navigation.PREFILL_EXAMPLE_ARG
 import com.mindvault.core.navigation.PREFILL_TITLE_ARG
+import com.mindvault.core.navigation.PREFILL_TYPE_ARG
 import com.mindvault.domain.model.CreateCategoryResult
 import com.mindvault.domain.model.DeckRemovalPreference
 import com.mindvault.domain.model.KnowledgeField
@@ -67,6 +68,9 @@ class AddKnowledgeViewModel @Inject constructor(
     private val prefill: KnowledgeFormValues? = savedStateHandle.get<String>(PREFILL_TITLE_ARG)?.let { title ->
         KnowledgeFormValues(
             title = title,
+            type = savedStateHandle.get<String>(PREFILL_TYPE_ARG)
+                ?.let { name -> KnowledgeType.entries.firstOrNull { it.name == name } }
+                ?: KnowledgeType.WORD,
             definition = savedStateHandle.get<String>(PREFILL_DEFINITION_ARG).orEmpty(),
             example = savedStateHandle.get<String>(PREFILL_EXAMPLE_ARG).orEmpty(),
         )
@@ -75,6 +79,7 @@ class AddKnowledgeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(
         AddKnowledgeUiState(
             title = prefill?.title.orEmpty(),
+            type = prefill?.type ?: KnowledgeType.WORD,
             definition = prefill?.definition.orEmpty(),
             example = prefill?.example.orEmpty(),
             isEditing = editingItemId != null,

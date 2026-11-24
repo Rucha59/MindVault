@@ -11,6 +11,7 @@ const val REVIEW_MODE_ARG = "mode"
 const val PREFILL_TITLE_ARG = "prefillTitle"
 const val PREFILL_DEFINITION_ARG = "prefillDefinition"
 const val PREFILL_EXAMPLE_ARG = "prefillExample"
+const val PREFILL_TYPE_ARG = "prefillType"
 
 /** Single source of truth for navigation routes. */
 sealed class MindVaultDestination(val route: String) {
@@ -25,13 +26,16 @@ sealed class MindVaultDestination(val route: String) {
         "knowledge/add-from-search" +
                 "?$PREFILL_TITLE_ARG={$PREFILL_TITLE_ARG}" +
                 "&$PREFILL_DEFINITION_ARG={$PREFILL_DEFINITION_ARG}" +
-                "&$PREFILL_EXAMPLE_ARG={$PREFILL_EXAMPLE_ARG}",
+                "&$PREFILL_EXAMPLE_ARG={$PREFILL_EXAMPLE_ARG}" +
+                "&$PREFILL_TYPE_ARG={$PREFILL_TYPE_ARG}",
     ) {
-        fun createRoute(title: String, definition: String, example: String?): String = buildString {
+        /** [type] is a KnowledgeType name (WORD or CONCEPT); the form starts with that type selected. */
+        fun createRoute(title: String, definition: String, example: String?, type: String? = null): String = buildString {
             append("knowledge/add-from-search")
             append("?$PREFILL_TITLE_ARG=${Uri.encode(title)}")
             append("&$PREFILL_DEFINITION_ARG=${Uri.encode(definition)}")
             if (!example.isNullOrBlank()) append("&$PREFILL_EXAMPLE_ARG=${Uri.encode(example)}")
+            if (!type.isNullOrBlank()) append("&$PREFILL_TYPE_ARG=${Uri.encode(type)}")
         }
     }
     data object KnowledgeDetail : MindVaultDestination("knowledge/detail/{$KNOWLEDGE_ID_ARG}") {

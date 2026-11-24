@@ -111,6 +111,8 @@ fun ProfileScreen(
             NewCardsPerDaySetting() // delete or comment out this line to hide the setting
             Spacer(Modifier.height(MindVaultSpacing.space3))
             CategoryDeckSetting() // delete or comment out this line to hide the setting
+            Spacer(Modifier.height(MindVaultSpacing.space3))
+            SearchSuggestionsSetting() // delete or comment out this line to hide the setting
         }
     }
 

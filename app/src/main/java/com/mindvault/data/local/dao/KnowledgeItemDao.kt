@@ -30,6 +30,10 @@ interface KnowledgeItemDao {
     @Query("SELECT * FROM knowledge_items WHERE title = :title COLLATE NOCASE LIMIT 1")
     suspend fun findByTitle(title: String): KnowledgeItemEntity?
 
+    /** Search V2: duplicate check by title (case-insensitive) and type (the enum name stored in `type`). */
+    @Query("SELECT * FROM knowledge_items WHERE title = :title COLLATE NOCASE AND type = :type LIMIT 1")
+    suspend fun findByTitleAndType(title: String, type: String): KnowledgeItemEntity?
+
     /** Sync (Phase C2): the first full upload reads every row once. */
     @Query("SELECT * FROM knowledge_items")
     suspend fun getAll(): List<KnowledgeItemEntity>

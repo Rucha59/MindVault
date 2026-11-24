@@ -19,4 +19,16 @@ interface SettingsRepository {
     fun observeDeckRemovalPreference(): Flow<DeckRemovalPreference>
 
     suspend fun setDeckRemovalPreference(preference: DeckRemovalPreference)
+
+    /** Whether Search shows autocomplete suggestions while typing; true when nothing is saved. */
+    fun observeSearchSuggestionsEnabled(): Flow<Boolean>
+
+    suspend fun setSearchSuggestionsEnabled(enabled: Boolean)
+
+    /** The last few searches on this device, newest first (see RecentSearches). Not tied to an account. */
+    fun observeRecentSearches(): Flow<List<String>>
+
+    suspend fun addRecentSearch(query: String)
+
+    suspend fun clearRecentSearches()
 }

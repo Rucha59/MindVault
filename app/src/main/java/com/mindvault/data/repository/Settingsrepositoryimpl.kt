@@ -3,12 +3,14 @@ package com.mindvault.data.repository
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mindvault.domain.model.DeckRemovalPreference
+import com.mindvault.domain.model.RecentSearches
 import com.mindvault.domain.model.ThemePreference
 import com.mindvault.domain.repository.SettingsRepository
 import com.mindvault.domain.usecase.ReviewQueueBuilder
@@ -74,9 +76,37 @@ class SettingsRepositoryImpl @Inject constructor(
         context.settingsDataStore.edit { it[DECK_REMOVAL_KEY] = preference.name }
     }
 
+    override fun observeSearchSuggestionsEnabled(): Flow<Boolean> =
+        preferences.map { prefs -> prefs[SEARCH_SUGGESTIONS_KEY] ?: true }.distinctUntilChanged()
+
+    override suspend fun setSearchSuggestionsEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[SEARCH_SUGGESTIONS_KEY] = enabled }
+    }
+
+    override fun observeRecentSearches(): Flow<List<String>> =
+        preferences.map { prefs -> decodeRecentSearches(prefs[RECENT_SEARCHES_KEY]) }.distinctUntilChanged()
+
+    override suspend fun addRecentSearch(query: String) {
+        context.settingsDataStore.edit { prefs ->
+            val updated = RecentSearches.add(decodeRecentSearches(prefs[RECENT_SEARCHES_KEY]), query)
+            prefs[RECENT_SEARCHES_KEY] = updated.joinToString(RECENT_SEPARATOR)
+        }
+    }
+
+    override suspend fun clearRecentSearches() {
+        context.settingsDataStore.edit { it.remove(RECENT_SEARCHES_KEY) }
+    }
+
+    /** Stored as one text, one search per line (searches never contain line breaks: whitespace is collapsed). */
+    private fun decodeRecentSearches(stored: String?): List<String> =
+        stored.orEmpty().split(RECENT_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }.take(RecentSearches.MAX)
+
     private companion object {
         val THEME_KEY = stringPreferencesKey("theme_preference")
         val NEW_CARDS_KEY = intPreferencesKey("new_cards_per_day")
         val DECK_REMOVAL_KEY = stringPreferencesKey("deck_removal_preference")
+        val SEARCH_SUGGESTIONS_KEY = booleanPreferencesKey("search_suggestions_enabled")
+        val RECENT_SEARCHES_KEY = stringPreferencesKey("recent_searches")
+        const val RECENT_SEPARATOR = "\n"
     }
 }

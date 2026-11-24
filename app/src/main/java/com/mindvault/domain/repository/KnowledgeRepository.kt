@@ -2,6 +2,7 @@ package com.mindvault.domain.repository
 
 import com.mindvault.domain.model.KnowledgeItem
 import com.mindvault.domain.model.KnowledgeItemDraft
+import com.mindvault.domain.model.KnowledgeType
 import kotlinx.coroutines.flow.Flow
 
 interface KnowledgeRepository {
@@ -11,6 +12,9 @@ interface KnowledgeRepository {
 
     /** Case-insensitive match; used to flag a Search result that is already saved. */
     suspend fun findByTitle(title: String): KnowledgeItem?
+
+    /** Case-insensitive title AND exact type, so a word and a concept with the same title can both be saved. */
+    suspend fun findByTitleAndType(title: String, type: KnowledgeType): KnowledgeItem?
 
     suspend fun create(draft: KnowledgeItemDraft): KnowledgeItem
 
