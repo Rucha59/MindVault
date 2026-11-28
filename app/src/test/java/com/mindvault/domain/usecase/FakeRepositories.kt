@@ -67,4 +67,8 @@ class FakeCategoryRepository(initial: List<Category> = emptyList()) : CategoryRe
         categories.value = categories.value.map { if (it.id == id) renamed else it }
         return renamed
     }
+
+    override suspend fun delete(id: String) {
+        categories.value = categories.value.filterNot { it.id == id }
+    }
 }

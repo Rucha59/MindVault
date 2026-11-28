@@ -171,5 +171,23 @@ val MIGRATION_4_5: Migration = object : Migration(4, 5) {
     }
 }
 
+/**
+ * v5 -> v6 (profile stats, review history). Only adds the empty table review_log (one row per counted answer:
+ * Hard, Good or Easy; Again is never logged) and an index on its time. No existing row is read, moved, rewritten or deleted, and there is no
+ * backfill: history starts when this version first runs. The table has no foreign key to flashcards on purpose, so
+ * history survives deleting a card, deck or item. Runs on the guest vault and on every account vault the first time
+ * each is opened.
+ */
+val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `review_log` (`id` TEXT NOT NULL, `flashcardId` TEXT NOT NULL, " +
+                    "`rating` TEXT NOT NULL, `reviewedAt` INTEGER NOT NULL, `intervalDaysBefore` INTEGER NOT NULL, " +
+                    "`intervalDaysAfter` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_review_log_reviewedAt` ON `review_log` (`reviewedAt`)")
+    }
+}
+
 val MINDVAULT_MIGRATIONS: Array<Migration> =
-    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)

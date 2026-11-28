@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,6 +56,7 @@ import com.mindvault.core.ui.components.EmptyState
 import com.mindvault.core.ui.components.MindVaultFilterChip
 import com.mindvault.core.ui.components.MindVaultSearchField
 import com.mindvault.core.ui.components.MindVaultTopBar
+import com.mindvault.domain.model.KnowledgeType
 import com.mindvault.domain.model.SearchScope
 import com.mindvault.domain.model.SearchSource
 import com.mindvault.domain.model.savedItemKey
@@ -73,6 +75,7 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val pendingLookup by viewModel.pendingQuickLookup.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val currentOnEdit by rememberUpdatedState(onEditBeforeSaveClick)
     var fieldFocused by remember { mutableStateOf(false) }
@@ -90,6 +93,14 @@ fun SearchScreen(
                     event.content.type.name,
                 )
             }
+        }
+    }
+
+    // A word sent from another app: runs once, as soon as this screen is on screen.
+    LaunchedEffect(pendingLookup?.id) {
+        pendingLookup?.let { lookup ->
+            focusManager.clearFocus()
+            viewModel.onQuickLookup(lookup)
         }
     }
 
@@ -117,6 +128,23 @@ fun SearchScreen(
             modifier = Modifier.padding(horizontal = MindVaultSpacing.screenHorizontal),
         )
         Spacer(Modifier.height(MindVaultSpacing.space4))
+
+        // Quick search: always offer to type the definition yourself (also works offline).
+        state.quickLookupText?.let { word ->
+            if (!showSuggestions && !showRecent) {
+                TextButton(
+                    onClick = { currentOnEdit(word, "", null, KnowledgeType.WORD.name) },
+                    modifier = Modifier.padding(horizontal = MindVaultSpacing.space2),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MindVaultColors.Forest),
+                ) {
+                    Text(
+                        text = "Add \u201C$word\u201D manually",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
 
         when {
             showSuggestions -> TermList(

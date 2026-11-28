@@ -5,12 +5,14 @@ import com.mindvault.data.repository.DeckRepositoryImpl
 import com.mindvault.data.repository.FlashcardRepositoryImpl
 import com.mindvault.data.repository.KnowledgeRepositoryImpl
 import com.mindvault.data.repository.SearchRepositoryImpl
+import com.mindvault.data.repository.StatsRepositoryImpl
 import com.mindvault.data.repository.WikimediaSearchRepository
 import com.mindvault.domain.repository.CategoryRepository
 import com.mindvault.domain.repository.DeckRepository
 import com.mindvault.domain.repository.FlashcardRepository
 import com.mindvault.domain.repository.KnowledgeRepository
 import com.mindvault.domain.repository.SearchRepository
+import com.mindvault.domain.repository.StatsRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -36,4 +38,7 @@ abstract class RepositoryModule {
     // bind SearchRepositoryImpl here instead; nothing else changes.
     @Binds @Singleton
     abstract fun bindSearchRepository(impl: WikimediaSearchRepository): SearchRepository
+
+    @Binds @Singleton
+    abstract fun bindStatsRepository(impl: StatsRepositoryImpl): StatsRepository
 }

@@ -2,6 +2,7 @@ package com.mindvault.domain.repository
 
 import com.mindvault.domain.model.AddToDeckResult
 import com.mindvault.domain.model.FlashcardDetail
+import com.mindvault.domain.model.ReviewRating
 import com.mindvault.domain.model.ReviewState
 import kotlinx.coroutines.flow.Flow
 
@@ -21,4 +22,13 @@ interface FlashcardRepository {
 
     suspend fun getReviewState(flashcardId: String): ReviewState?
     suspend fun saveReviewState(state: ReviewState)
+
+    /**
+     * Saves [state] after a Hard, Good or Easy answer and logs that answer (review history), in one transaction,
+     * both queued for sync. Again is never passed here (it is not logged). [intervalDaysBefore] is the card's
+     * interval before the answer. The default only saves the state, so simple fakes keep working;
+     * [FlashcardRepositoryImpl] overrides it.
+     */
+    suspend fun recordReview(state: ReviewState, rating: ReviewRating, intervalDaysBefore: Int) =
+        saveReviewState(state)
 }

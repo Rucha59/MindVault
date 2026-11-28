@@ -21,6 +21,7 @@ object SyncEntityType {
     const val KNOWLEDGE_ITEM = "KNOWLEDGE_ITEM"
     const val FLASHCARD = "FLASHCARD"
     const val REVIEW_STATE = "REVIEW_STATE"
+    const val REVIEW_LOG = "REVIEW_LOG"
 }
 
 object SyncOperation {

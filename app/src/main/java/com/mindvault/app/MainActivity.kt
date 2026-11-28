@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mindvault.core.navigation.MindVaultNavHost
 import com.mindvault.core.theme.MindVaultTheme
 import com.mindvault.data.auth.AuthDeepLinkHandler
+import com.mindvault.domain.usecase.QuickLookupInbox
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -24,12 +25,16 @@ class MainActivity : ComponentActivity() {
     private val themeViewModel: AppThemeViewModel by viewModels()
 
     @Inject lateinit var authDeepLinkHandler: AuthDeepLinkHandler
+    @Inject lateinit var quickLookupInbox: QuickLookupInbox
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Only on a fresh launch: after rotation the same intent would be handled twice.
-        if (savedInstanceState == null) authDeepLinkHandler.handle(intent)
+        if (savedInstanceState == null) {
+            authDeepLinkHandler.handle(intent)
+            handleQuickLookup(intent)
+        }
         setContent {
             val preference by themeViewModel.themePreference.collectAsStateWithLifecycle()
             val darkTheme = preference.isDark(isSystemInDarkTheme())
@@ -57,5 +62,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         authDeepLinkHandler.handle(intent)
+        handleQuickLookup(intent)
+    }
+
+    /** Text forwarded by QuickLookupActivity goes into the inbox once; the extra is removed so it can't be replayed. */
+    private fun handleQuickLookup(intent: Intent?) {
+        val text = intent?.getStringExtra(QuickLookupIntents.EXTRA_LOOKUP_TEXT) ?: return
+        intent.removeExtra(QuickLookupIntents.EXTRA_LOOKUP_TEXT)
+        quickLookupInbox.submit(text)
     }
 }

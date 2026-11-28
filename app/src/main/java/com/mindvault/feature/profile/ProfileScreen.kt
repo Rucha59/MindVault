@@ -49,6 +49,7 @@ import com.mindvault.domain.model.SyncStatus
 fun ProfileScreen(
     onBackClick: () -> Unit,
     onSignInClick: () -> Unit,
+    onViewStatsClick: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
@@ -75,6 +76,9 @@ fun ProfileScreen(
                 )
                 Spacer(Modifier.height(MindVaultSpacing.space6))
             }
+
+            ProfileProgressCard(onViewStatsClick = onViewStatsClick) // delete or comment out this line to hide the card
+            Spacer(Modifier.height(MindVaultSpacing.space6))
 
             SectionHeader("Appearance")
             MindVaultCard(modifier = Modifier.fillMaxWidth()) {

@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mindvault.domain.model.QuickLookup
 import com.mindvault.domain.model.SaveSearchResult
 import com.mindvault.domain.model.SearchLimits
 import com.mindvault.domain.model.SearchOutcome
@@ -20,6 +21,7 @@ import com.mindvault.domain.usecase.LoadConceptSummaryUseCase
 import com.mindvault.domain.usecase.ObserveRecentSearchesUseCase
 import com.mindvault.domain.usecase.ObserveSavedTitlesUseCase
 import com.mindvault.domain.usecase.ObserveSearchSuggestionsEnabledUseCase
+import com.mindvault.domain.usecase.QuickLookupInbox
 import com.mindvault.domain.usecase.RankSearchResultsUseCase
 import com.mindvault.domain.usecase.SaveSearchResultUseCase
 import com.mindvault.domain.usecase.SearchDefinitionsUseCase
@@ -55,6 +57,7 @@ class SearchViewModel @Inject constructor(
     observeRecentSearches: ObserveRecentSearchesUseCase,
     private val addRecentSearch: AddRecentSearchUseCase,
     private val clearRecentSearches: ClearRecentSearchesUseCase,
+    private val quickLookupInbox: QuickLookupInbox,
 ) : ViewModel() {
 
     /** Compose state (not a StateFlow) so typing doesn't lag, as in the Vault search box. */
@@ -69,6 +72,12 @@ class SearchViewModel @Inject constructor(
 
     /** The text a search was just run for. No suggestions are shown for it (they would only repeat it). */
     private var searchedText: String? = null
+
+    /** The word that came from another app, while the shown search still belongs to it. */
+    private val quickLookupText = MutableStateFlow<String?>(null)
+
+    /** A lookup sent from another app and not yet run. The screen runs it with [onQuickLookup] once it is on screen. */
+    val pendingQuickLookup: StateFlow<QuickLookup?> = quickLookupInbox.pending
 
     /** Eagerly, so the current value is known the moment typing starts. On unless the user turned it off. */
     private val suggestionsEnabled: StateFlow<Boolean> =
@@ -90,11 +99,13 @@ class SearchViewModel @Inject constructor(
             emit(emptyList())
         },
         suggestions,
-    ) { req, savedByKey, recent, typed -> buildState(req, savedByKey, recent, typed) }
+        quickLookupText,
+    ) { req, savedByKey, recent, typed, quick -> buildState(req, savedByKey, recent, typed, quick) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState())
 
     fun onQueryChange(value: String) {
         query = value
+        if (value.trim() != quickLookupText.value) quickLookupText.value = null
         if (value.isBlank()) {
             searchJob?.cancel()
             searchedText = null
@@ -106,6 +117,19 @@ class SearchViewModel @Inject constructor(
     /** Runs the search for a tapped autocomplete suggestion or recent search. */
     fun onSuggestionSelected(text: String) {
         query = text
+        onSearch()
+    }
+
+    /**
+     * Runs a lookup sent from another app: filter reset to All, the text in the field, the search started.
+     * The inbox hands each lookup to one caller only, so it runs once.
+     */
+    fun onQuickLookup(lookup: QuickLookup) {
+        if (!quickLookupInbox.consume(lookup.id)) return
+        searchJob?.cancel()
+        request.value = RequestState(scope = SearchScope.ALL)
+        query = lookup.text
+        quickLookupText.value = lookup.text
         onSearch()
     }
 
@@ -133,6 +157,7 @@ class SearchViewModel @Inject constructor(
     fun onSearch() {
         val q = query.trim()
         if (q.isEmpty()) return
+        if (q != quickLookupText.value) quickLookupText.value = null
         val current = request.value
         if (current.loading && current.submittedQuery == q) return
 
@@ -318,6 +343,7 @@ class SearchViewModel @Inject constructor(
         savedByKey: Map<String, String>,
         recentSearches: List<String>,
         suggestions: List<String>,
+        quickLookup: String?,
     ): SearchUiState {
         val found = req.outcomes.values.filterIsInstance<SearchOutcome.Success>().flatMap { it.results }
         val ranked = rankSearchResults(req.submittedQuery, found)
@@ -356,6 +382,7 @@ class SearchViewModel @Inject constructor(
             recentSearches = recentSearches,
             savingKeys = req.savingKeys,
             saveError = req.saveError,
+            quickLookupText = quickLookup,
         )
     }
 

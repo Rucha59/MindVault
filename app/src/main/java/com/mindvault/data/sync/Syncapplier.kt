@@ -4,10 +4,12 @@ import com.mindvault.data.local.entity.CategoryEntity
 import com.mindvault.data.local.entity.DeckEntity
 import com.mindvault.data.local.entity.FlashcardEntity
 import com.mindvault.data.local.entity.KnowledgeItemEntity
+import com.mindvault.data.local.entity.ReviewLogEntity
 import com.mindvault.data.local.entity.ReviewStateEntity
 import com.mindvault.data.local.entity.SyncEntityType
 import com.mindvault.data.local.entity.SyncOperation
 import com.mindvault.data.local.entity.outboxEntry
+import com.mindvault.domain.model.ReviewRating
 
 /**
  * Applies rows pulled from the cloud to the vault, following the confirmed conflict policy
@@ -35,6 +37,7 @@ internal class SyncApplier(
             SyncTable.KNOWLEDGE_ITEMS -> item(row)
             SyncTable.FLASHCARDS -> flashcard(row)
             SyncTable.REVIEW_STATES -> reviewState(row)
+            SyncTable.REVIEW_LOGS -> reviewLog(row)
         }
     }
 
@@ -309,6 +312,23 @@ internal class SyncApplier(
             ),
         )
         if (local != null) dropPendingUpsert(SyncEntityType.REVIEW_STATE, id)
+    }
+
+    // ---------------------------------------------------------------- review log
+
+    /**
+     * The review history is append-only: an entry is added once and never changed, so an ID that is already here is
+     * skipped. It does not depend on its card: history is kept even if the card, deck or item is gone.
+     */
+    private suspend fun reviewLog(row: SyncRow) {
+        val id = row.str("id") ?: return
+        val flashcardId = row.str("flashcard_id") ?: return
+        val rating = row.str("rating")?.takeIf { value -> ReviewRating.entries.any { it.name == value && it != ReviewRating.AGAIN } } ?: return
+        val reviewedAt = row.long("reviewed_at") ?: return
+        val intervalBefore = row.int("interval_days_before") ?: return
+        val intervalAfter = row.int("interval_days_after") ?: return
+        if (store.reviewLog(id) != null) return
+        store.insertReviewLog(ReviewLogEntity(id, flashcardId, rating, reviewedAt, intervalBefore, intervalAfter))
     }
 
     // ---------------------------------------------------------------- helpers

@@ -15,6 +15,7 @@ import com.mindvault.domain.usecase.LoadConceptSummaryUseCase
 import com.mindvault.domain.usecase.ObserveRecentSearchesUseCase
 import com.mindvault.domain.usecase.ObserveSavedTitlesUseCase
 import com.mindvault.domain.usecase.ObserveSearchSuggestionsEnabledUseCase
+import com.mindvault.domain.usecase.QuickLookupInbox
 import com.mindvault.domain.usecase.RankSearchResultsUseCase
 import com.mindvault.domain.usecase.SearchDefinitionsUseCase
 import com.mindvault.domain.usecase.SuggestSearchTermsUseCase
@@ -47,6 +48,7 @@ class SearchViewModelTest {
     private val searchRepository = FakeSearchRepository()
     private val knowledgeRepository = FakeKnowledgeRepository()
     private val settings = FakeSettingsRepository()
+    private val inbox = QuickLookupInbox()
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -65,6 +67,7 @@ class SearchViewModelTest {
         observeRecentSearches = ObserveRecentSearchesUseCase(settings),
         addRecentSearch = AddRecentSearchUseCase(settings),
         clearRecentSearches = ClearRecentSearchesUseCase(settings),
+        quickLookupInbox = inbox,
     )
 
     /** uiState only runs while collected, so keep one collector alive for the whole test. */
@@ -602,5 +605,105 @@ class SearchViewModelTest {
         vm.onClearRecentSearches()
 
         assertTrue(vm.uiState.value.recentSearches.isEmpty())
+    }
+
+    // ------------------------------------------------------------------ quick lookup (text sent from another app)
+
+    /** What the Search screen does when a lookup is pending: take it from the inbox and run it. */
+    private fun SearchViewModel.lookup(text: String) {
+        inbox.submit(text)
+        onQuickLookup(inbox.pending.value!!)
+    }
+
+    @Test
+    fun quickLookup_resetsTheFilterToAll_fillsTheField_andRunsTheSearch() = runTest(dispatcher) {
+        searchRepository.outcome = words("entropy")
+        val vm = collecting(newViewModel())
+        vm.onScopeChange(SearchScope.CONCEPTS) // idle, so no search yet
+
+        vm.lookup("entropy")
+
+        val state = vm.uiState.value
+        assertEquals(SearchScope.ALL, state.scope)
+        assertEquals("entropy", vm.query)
+        assertEquals("entropy", state.submittedQuery)
+        assertEquals(SearchStatus.Results, state.status)
+        assertEquals(setOf(SearchSource.WORDS, SearchSource.CONCEPTS), searchRepository.sources.toSet())
+        assertNull(inbox.pending.value)
+    }
+
+    @Test
+    fun quickLookup_runsOnlyOnce() = runTest(dispatcher) {
+        searchRepository.outcome = words("entropy")
+        val vm = collecting(newViewModel())
+        inbox.submit("entropy")
+        val lookup = inbox.pending.value!!
+
+        vm.onQuickLookup(lookup)
+        val callsAfterFirst = searchRepository.calls.size
+        vm.onQuickLookup(lookup)
+
+        assertEquals(callsAfterFirst, searchRepository.calls.size)
+    }
+
+    @Test
+    fun aStaleQuickLookup_isIgnored() = runTest(dispatcher) {
+        val vm = collecting(newViewModel())
+        inbox.submit("first")
+        val stale = inbox.pending.value!!
+        inbox.submit("second")
+
+        vm.onQuickLookup(stale)
+
+        assertTrue(searchRepository.calls.isEmpty())
+        assertEquals(SearchStatus.Idle, vm.uiState.value.status)
+        assertEquals("second", inbox.pending.value?.text)
+    }
+
+    @Test
+    fun quickLookup_offersAddManually_untilTheUserEditsTheField() = runTest(dispatcher) {
+        searchRepository.outcome = words("entropy")
+        val vm = collecting(newViewModel())
+
+        vm.lookup("entropy")
+        assertEquals("entropy", vm.uiState.value.quickLookupText)
+
+        vm.onQueryChange("entropy ") // same text once trimmed
+        assertEquals("entropy", vm.uiState.value.quickLookupText)
+
+        vm.onQueryChange("entropy x")
+        assertNull(vm.uiState.value.quickLookupText)
+    }
+
+    @Test
+    fun searchingSomethingElse_clearsTheQuickLookup() = runTest(dispatcher) {
+        searchRepository.outcome = words("x")
+        val vm = collecting(newViewModel())
+        vm.lookup("entropy")
+
+        vm.search("run")
+
+        assertNull(vm.uiState.value.quickLookupText)
+    }
+
+    @Test
+    fun quickLookup_whenOffline_stillOffersAddManually() = runTest(dispatcher) {
+        searchRepository.outcome = SearchOutcome.Offline
+        val vm = collecting(newViewModel())
+
+        vm.lookup("entropy")
+
+        assertEquals(SearchStatus.Offline, vm.uiState.value.status)
+        assertEquals("entropy", vm.uiState.value.quickLookupText)
+    }
+
+    @Test
+    fun quickLookup_thatFindsSomething_isRemembered() = runTest(dispatcher) {
+        searchRepository.outcome = words("entropy")
+        val vm = collecting(newViewModel())
+
+        vm.lookup("entropy")
+
+        assertEquals(listOf("entropy"), vm.uiState.value.recentSearches)
     }
 }

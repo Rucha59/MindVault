@@ -6,6 +6,7 @@ import com.mindvault.data.local.entity.CategoryEntity
 import com.mindvault.data.local.entity.DeckEntity
 import com.mindvault.data.local.entity.FlashcardEntity
 import com.mindvault.data.local.entity.KnowledgeItemEntity
+import com.mindvault.data.local.entity.ReviewLogEntity
 import com.mindvault.data.local.entity.ReviewStateEntity
 import com.mindvault.data.local.entity.SyncOutboxEntity
 import com.mindvault.data.local.entity.SyncStateEntity
@@ -73,6 +74,9 @@ class RoomSyncLocalStore(private val db: MindVaultDatabase) : SyncLocalStore {
     override suspend fun reviewState(flashcardId: String): ReviewStateEntity? =
         db.reviewStateDao().getByFlashcardId(flashcardId)
     override suspend fun putReviewState(state: ReviewStateEntity) = db.reviewStateDao().upsert(state)
+
+    override suspend fun reviewLog(id: String): ReviewLogEntity? = db.reviewLogDao().getById(id)
+    override suspend fun insertReviewLog(entry: ReviewLogEntity): Boolean = db.reviewLogDao().insert(entry) != -1L
 
     override fun initialReviewState(flashcardId: String, createdAt: Long): ReviewStateEntity =
         ReviewState.initial(flashcardId, createdAt).toEntity(updatedAt = 0L)

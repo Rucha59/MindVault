@@ -16,6 +16,7 @@ enum class SyncTable(val wire: String) {
     KNOWLEDGE_ITEMS("knowledge_items"),
     FLASHCARDS("flashcards"),
     REVIEW_STATES("review_states"),
+    REVIEW_LOGS("review_logs"),
 }
 
 enum class SyncFailureKind { NETWORK, AUTH, SERVER, UNKNOWN }

@@ -4,6 +4,7 @@ import com.mindvault.data.local.entity.CategoryEntity
 import com.mindvault.data.local.entity.DeckEntity
 import com.mindvault.data.local.entity.FlashcardEntity
 import com.mindvault.data.local.entity.KnowledgeItemEntity
+import com.mindvault.data.local.entity.ReviewLogEntity
 import com.mindvault.data.local.entity.ReviewStateEntity
 import com.mindvault.data.local.entity.SyncOutboxEntity
 
@@ -20,6 +21,7 @@ class FakeSyncLocalStore : SyncLocalStore {
     val itemRows = LinkedHashMap<String, KnowledgeItemEntity>()
     val cardRows = LinkedHashMap<String, FlashcardEntity>()
     val stateRows = LinkedHashMap<String, ReviewStateEntity>()
+    val logRows = LinkedHashMap<String, ReviewLogEntity>()
 
     override suspend fun <T> inTransaction(block: suspend () -> T): T = block()
 
@@ -132,6 +134,14 @@ class FakeSyncLocalStore : SyncLocalStore {
         check(state.flashcardId in cardRows) { "FOREIGN KEY: review state card" }
         stateRows[state.flashcardId] = state
     }
+    // Review log: append-only, no foreign key (history survives deleted cards)
+    override suspend fun reviewLog(id: String) = logRows[id]
+    override suspend fun insertReviewLog(entry: ReviewLogEntity): Boolean {
+        if (entry.id in logRows) return false
+        logRows[entry.id] = entry
+        return true
+    }
+
     override fun initialReviewState(flashcardId: String, createdAt: Long) =
         ReviewStateEntity(flashcardId, null, createdAt, 0, 2.5, 0, 0L)
 

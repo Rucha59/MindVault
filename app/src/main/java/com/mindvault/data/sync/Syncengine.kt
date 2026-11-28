@@ -179,6 +179,7 @@ class SyncEngine(
             Phase(SyncOperation.UPSERT, listOf(SyncEntityType.KNOWLEDGE_ITEM)),
             Phase(SyncOperation.UPSERT, listOf(SyncEntityType.FLASHCARD)),
             Phase(SyncOperation.UPSERT, listOf(SyncEntityType.REVIEW_STATE)),
+            Phase(SyncOperation.UPSERT, listOf(SyncEntityType.REVIEW_LOG)),
             Phase(SyncOperation.DELETE, listOf(SyncEntityType.FLASHCARD)),
             Phase(SyncOperation.DELETE, listOf(SyncEntityType.KNOWLEDGE_ITEM)),
             Phase(SyncOperation.DELETE, listOf(SyncEntityType.DECK)),

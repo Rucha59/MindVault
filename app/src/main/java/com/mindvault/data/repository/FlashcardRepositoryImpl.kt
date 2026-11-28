@@ -5,6 +5,7 @@ import com.mindvault.core.util.newId
 import com.mindvault.core.util.nowMillis
 import com.mindvault.data.local.database.ActiveDatabase
 import com.mindvault.data.local.entity.FlashcardEntity
+import com.mindvault.data.local.entity.ReviewLogEntity
 import com.mindvault.data.local.entity.SyncEntityType
 import com.mindvault.data.local.entity.SyncOperation
 import com.mindvault.data.local.entity.outboxEntry
@@ -14,6 +15,7 @@ import com.mindvault.domain.error.DefaultDeckProtectedException
 import com.mindvault.domain.model.AddToDeckResult
 import com.mindvault.domain.model.Deck
 import com.mindvault.domain.model.FlashcardDetail
+import com.mindvault.domain.model.ReviewRating
 import com.mindvault.domain.model.ReviewState
 import com.mindvault.domain.repository.FlashcardRepository
 import javax.inject.Inject
@@ -101,6 +103,36 @@ class FlashcardRepositoryImpl @Inject constructor(
             db.syncOutboxDao().upsert(
                 outboxEntry(SyncEntityType.REVIEW_STATE, state.flashcardId, SyncOperation.UPSERT, updatedAt),
             )
+        }
+    }
+
+    /**
+     * The review state and the history entry are written in one transaction, so a crash can never leave an answer
+     * without its log entry (or the reverse). Again is never logged (it is not a category; its answer when the card
+     * returns is). The log has no foreign key: history survives deleting the card.
+     */
+    override suspend fun recordReview(state: ReviewState, rating: ReviewRating, intervalDaysBefore: Int) {
+        require(rating != ReviewRating.AGAIN) { "Again is not logged; save the state without a log entry." }
+        val db = active.current
+        db.withTransaction {
+            val dao = db.reviewStateDao()
+            val updatedAt = nextUpdatedAt(dao.getByFlashcardId(state.flashcardId)?.updatedAt ?: 0L)
+            dao.upsert(state.toEntity(updatedAt = updatedAt))
+            val outbox = db.syncOutboxDao()
+            outbox.upsert(
+                outboxEntry(SyncEntityType.REVIEW_STATE, state.flashcardId, SyncOperation.UPSERT, updatedAt),
+            )
+            val reviewedAt = state.lastReviewedAt ?: updatedAt
+            val entry = ReviewLogEntity(
+                id = newId(),
+                flashcardId = state.flashcardId,
+                rating = rating.name,
+                reviewedAt = reviewedAt,
+                intervalDaysBefore = intervalDaysBefore,
+                intervalDaysAfter = state.intervalDays,
+            )
+            db.reviewLogDao().insert(entry)
+            outbox.upsert(outboxEntry(SyncEntityType.REVIEW_LOG, entry.id, SyncOperation.UPSERT, reviewedAt))
         }
     }
 }

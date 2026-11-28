@@ -49,5 +49,14 @@ internal suspend fun SyncLocalStore.upsertData(type: String, id: String): Map<St
             "updated_at" to it.updatedAt,
         )
     }
+    SyncEntityType.REVIEW_LOG -> reviewLog(id)?.let {
+        mapOf(
+            "flashcard_id" to it.flashcardId,
+            "rating" to it.rating,
+            "reviewed_at" to it.reviewedAt,
+            "interval_days_before" to it.intervalDaysBefore,
+            "interval_days_after" to it.intervalDaysAfter,
+        )
+    }
     else -> null
 }

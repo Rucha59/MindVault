@@ -4,6 +4,7 @@ import com.mindvault.data.local.entity.CategoryEntity
 import com.mindvault.data.local.entity.DeckEntity
 import com.mindvault.data.local.entity.FlashcardEntity
 import com.mindvault.data.local.entity.KnowledgeItemEntity
+import com.mindvault.data.local.entity.ReviewLogEntity
 import com.mindvault.data.local.entity.ReviewStateEntity
 import com.mindvault.data.local.entity.SyncOutboxEntity
 
@@ -65,6 +66,12 @@ interface SyncLocalStore {
     suspend fun reviewStates(): List<ReviewStateEntity>
     suspend fun reviewState(flashcardId: String): ReviewStateEntity?
     suspend fun putReviewState(state: ReviewStateEntity)
+
+    // Review log (append-only history)
+    suspend fun reviewLog(id: String): ReviewLogEntity?
+
+    /** False when an entry with this ID already exists. */
+    suspend fun insertReviewLog(entry: ReviewLogEntity): Boolean
 
     /** A never-reviewed state for a card that arrived from the cloud without one. updatedAt must be 0. */
     fun initialReviewState(flashcardId: String, createdAt: Long): ReviewStateEntity

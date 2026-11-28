@@ -6,13 +6,16 @@ import com.mindvault.data.local.dao.CategoryDao
 import com.mindvault.data.local.dao.DeckDao
 import com.mindvault.data.local.dao.FlashcardDao
 import com.mindvault.data.local.dao.KnowledgeItemDao
+import com.mindvault.data.local.dao.ReviewLogDao
 import com.mindvault.data.local.dao.ReviewStateDao
+import com.mindvault.data.local.dao.StatsDao
 import com.mindvault.data.local.dao.SyncOutboxDao
 import com.mindvault.data.local.dao.SyncStateDao
 import com.mindvault.data.local.entity.CategoryEntity
 import com.mindvault.data.local.entity.DeckEntity
 import com.mindvault.data.local.entity.FlashcardEntity
 import com.mindvault.data.local.entity.KnowledgeItemEntity
+import com.mindvault.data.local.entity.ReviewLogEntity
 import com.mindvault.data.local.entity.ReviewStateEntity
 import com.mindvault.data.local.entity.SyncOutboxEntity
 import com.mindvault.data.local.entity.SyncStateEntity
@@ -26,8 +29,9 @@ import com.mindvault.data.local.entity.SyncStateEntity
         ReviewStateEntity::class,
         SyncOutboxEntity::class,
         SyncStateEntity::class,
+        ReviewLogEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class MindVaultDatabase : RoomDatabase() {
@@ -38,6 +42,8 @@ abstract class MindVaultDatabase : RoomDatabase() {
     abstract fun reviewStateDao(): ReviewStateDao
     abstract fun syncOutboxDao(): SyncOutboxDao
     abstract fun syncStateDao(): SyncStateDao
+    abstract fun reviewLogDao(): ReviewLogDao
+    abstract fun statsDao(): StatsDao
 
     companion object {
         const val NAME = "mindvault.db"

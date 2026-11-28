@@ -29,6 +29,7 @@ import com.mindvault.feature.home.HomeScreen
 import com.mindvault.feature.knowledge.AddKnowledgeScreen
 import com.mindvault.feature.profile.ProfileScreen
 import com.mindvault.feature.search.SearchScreen
+import com.mindvault.feature.stats.StatsScreen
 import com.mindvault.feature.vault.VaultScreen
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -38,7 +39,18 @@ import androidx.compose.runtime.remember
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mindvault.app.AppSessionViewModel
+import com.mindvault.app.QuickLookupViewModel
 private const val TransitionMillis = 150
+
+/** Screens with work in progress: a quick-search lookup waits until the user leaves them. */
+private val QuickLookupHoldRoutes: Set<String> by lazy {
+    setOf(
+        MindVaultDestination.AddKnowledge.route,
+        MindVaultDestination.AddKnowledgeFromSearch.route,
+        MindVaultDestination.KnowledgeEdit.route,
+        MindVaultDestination.Auth.route,
+    )
+}
 
 @Composable
 fun MindVaultNavHost() {
@@ -48,6 +60,8 @@ fun MindVaultNavHost() {
     var showAddMenu by rememberSaveable { mutableStateOf(false) }
     val sessionViewModel: AppSessionViewModel = hiltViewModel()
     val dataOwner by sessionViewModel.owner.collectAsStateWithLifecycle()
+    val quickLookupViewModel: QuickLookupViewModel = hiltViewModel()
+    val quickLookupId by quickLookupViewModel.pendingId.collectAsStateWithLifecycle()
     var handledOwner by remember { mutableStateOf(dataOwner) }
     // A different vault (another account, or guest) is now active: go to Home with a clean history and
     // drop the saved tab states, so no screen keeps filters or state from the previous account.
@@ -73,6 +87,18 @@ fun MindVaultNavHost() {
 
     fun navigateTo(destination: MindVaultDestination) {
         navController.navigate(destination.route) { launchSingleTop = true }
+    }
+
+    // Quick search: a word sent from another app opens Search, which runs it. While a form or sign-in is open the
+    // lookup waits, so unsaved edits are not thrown away; it opens as soon as the user leaves that screen.
+    // dataOwner is a key so the lookup still opens after an account-change reset to Home. currentRoute is null
+    // until the graph is set, and navigating before that would crash.
+    LaunchedEffect(quickLookupId, dataOwner, currentRoute) {
+        if (quickLookupId == null) return@LaunchedEffect
+        val route = currentRoute ?: return@LaunchedEffect
+        if (route in QuickLookupHoldRoutes) return@LaunchedEffect
+        showAddMenu = false
+        navigateToMain(MindVaultDestination.Search)
     }
 
     Scaffold(
@@ -208,7 +234,11 @@ fun MindVaultNavHost() {
                 ProfileScreen(
                     onBackClick = { navController.popBackStack() },
                     onSignInClick = { navigateTo(MindVaultDestination.Auth) },
+                    onViewStatsClick = { navigateTo(MindVaultDestination.Stats) },
                 )
+            }
+            composable(MindVaultDestination.Stats.route) {
+                StatsScreen(onBackClick = { navController.popBackStack() })
             }
             composable(MindVaultDestination.Auth.route) {
                 // Signing in changes the vault and resets navigation to Home; only pop if there is somewhere to go back to.

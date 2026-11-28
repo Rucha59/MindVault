@@ -29,6 +29,27 @@
             </intent-filter>
         </activity>
 
+        <!-- Quick search: "MindVault" in the text-selection menu and in the Share sheet. No screen of its own:
+             it cleans the text and forwards it to MainActivity in MindVault's own task, then closes. -->
+        <activity
+            android:name=".app.QuickLookupActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/quick_lookup_label"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <!-- Phase C3: WorkManager starts on demand with Hilt's worker factory (see MindVaultApp), so its
              default initializer is removed. Without this, sync workers fail to be created. -->
         <provider

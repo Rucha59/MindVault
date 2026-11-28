@@ -1296,3 +1296,327 @@ Record the real output.
 
 ### Next
 Build and test Phase 2 and these rules, fix what they report; then the review history log, language editions for Search, and the launch items above (contact address, Wikimedia contact, privacy policy, About screen).
+
+## Entry 22 — Quick search, Phase 1 of 3: receive selected / shared text
+
+**Status:** Written, not built. Nothing here is Verified until you report a real build, test run and device check.
+
+**Goal (whole feature):** Select a word in any app, tap **MindVault** in the selection menu (or Share → MindVault), and land on Search with the word filled in and searched, with **Save**, **Edit first** and **Add manually** available. Phase 1 only *receives* the text. Phase 2 makes Search use it. Phase 3 is docs.
+
+### Decisions (my defaults from the plan; you sent the files without changing them)
+1. Selection menu **and** Share sheet.
+2. Auto-run the search (Phase 2), with "Add manually" always visible.
+3. Text over 100 characters: use the first 100.
+4. Filter resets to **All** for these lookups.
+5. Same for guests and signed-in users; no gate.
+6. Menu label "MindVault", from a string resource.
+7. Android only; iOS later needs its own Share/Action extension.
+8. Docs as in Entry 21 (Phase 3).
+
+Added in Phase 1 (not in the plan): a bare link (`https://…`, `www.…`) is ignored, because a shared page address is not a word. A link inside longer text is kept.
+
+### Design change from the plan: a trampoline activity now, not as a fallback
+`MainActivity` is `singleTop` in MindVault's own task. If it received `PROCESS_TEXT` / `SEND` directly, Android would open it inside the *other app's* task. So a small no-screen activity, `QuickLookupActivity`, receives the intents, cleans the text, starts `MainActivity` in MindVault's own task (`FLAG_ACTIVITY_NEW_TASK`) with a private extra, and closes. `MainActivity` puts the text into an in-memory inbox, the same pattern as `AuthDeepLinkHandler`.
+
+### Database, dependencies, setup
+No Room schema change, no migration, no Supabase change, no new dependency. Nothing is stored: the lookup lives in memory only.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Save to | Purpose |
+|---|---|---|
+| `QuickLookup.kt` | `domain/model/` | `QuickLookup` (id + text) and `QuickLookupParser` (trim, collapse whitespace, ignore blank / bare link, cap at 100) |
+| `QuickLookupInbox.kt` | `domain/usecase/` | `@Singleton` holder of one pending lookup: `submit`, `consume`, `pending` flow |
+| `QuickLookupIntents.kt` | `app/` | Reads the text from a `PROCESS_TEXT` or text `SEND` intent; the private extra name |
+| `QuickLookupActivity.kt` | `app/` | The no-screen trampoline |
+| `QuickLookupParserTest.kt` | `app/src/test/java/com/mindvault/domain/model/` | 9 tests |
+| `QuickLookupInboxTest.kt` | `app/src/test/java/com/mindvault/domain/usecase/` | 7 tests |
+
+### Files modified (complete files supplied; replace yours)
+| File | Change |
+|---|---|
+| `app/src/main/AndroidManifest.xml` | New `QuickLookupActivity` (exported, no display, excluded from recents, empty task affinity) with filters for `PROCESS_TEXT` and `SEND`, both `text/plain`. Everything else unchanged |
+| `app/src/main/res/values/strings.xml` | Added `quick_lookup_label` ("MindVault") and `quick_lookup_nothing_selected` |
+| `app/MainActivity.kt` | Injects `QuickLookupInbox`; `handleQuickLookup(intent)` runs on a fresh launch and in `onNewIntent`, then removes the extra. Auth handling and theme code unchanged |
+
+### Key behaviour
+- Blank selection or a bare link: a short toast ("Select a word or short phrase to look up in MindVault.") and MindVault does not open.
+- A newer lookup replaces an unconsumed older one. The same text sent twice still counts as new.
+- The extra is removed after reading, and `onCreate` only handles the intent on a fresh launch, so rotation or recreation does not replay it.
+- `MainActivity` is exported for the launcher, so another app could send the private extra. The inbox cleans the text again, and the worst case is a prefilled search.
+
+### Known limits (Phase 1)
+- **No visible effect in the app yet.** The lookup sits in the inbox until Phase 2 wires Search to it. What you can check now is that MindVault appears in the menus and opens.
+- Some apps (and some Android versions) hide `PROCESS_TEXT` items under the "⋮" overflow of the selection menu, or don't offer them in non-selectable text.
+- Selecting text in a field MindVault can't see (password fields, some secure apps) isn't possible; nothing to fix.
+- The privacy policy and Play data-safety text should mention that text the user sends to MindVault is searched on Wiktionary and Wikipedia (already on the launch list for Search).
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+```
+Record the real output. If a test fails, paste the failure and the file.
+
+### Likely compile-fix spots
+`QuickLookupActivity.kt` (`com.mindvault.R` import: it assumes the namespace is `com.mindvault`), `QuickLookup.kt` (`Regex.replace` on a `CharSequence`).
+
+### Manual checks
+1. Install over the current build. Open a browser or notes app, long-press a word: **MindVault** is in the selection menu (maybe under "⋮").
+2. Tap it: MindVault comes to the front in its own window. The recent-apps screen shows one MindVault entry, and the original app is unchanged.
+3. Share text from another app: MindVault is in the Share sheet; tapping it behaves the same.
+4. Select only spaces, or share a plain link: a toast appears and MindVault does not open.
+5. With MindVault already open on any tab: send a word; the app comes to the front and nothing else changes yet (expected in Phase 1).
+6. Rotate the phone after a lookup: nothing is replayed.
+7. Existing flows (sign-in, Vault, Flashcards, Search, Profile) behave as before.
+
+### Next
+Phase 2: `NavHost` switches to Search when a lookup arrives (also after an account-change reset); `SearchScreen` runs it once it is on screen; "Add manually" opens the Add form with the title filled in. This needs one new constructor parameter on `SearchViewModel`, so `Searchviewmodeltest.kt` will need one extra argument; I'll ask for that file then. A lookup that arrives while an Add / Edit form is open is not to be allowed to discard the form's edits; I'll handle that in Phase 2.
+
+### Entry 22 — Phase 2 of 3 (append under Entry 22): Search runs the lookup, "Add manually", navigation
+
+**Status:** Written, not built. Phase 1 was written but you have not yet reported its build or device check; Phase 2 depends on it. Nothing here is Verified until you report a real build, test run and device check.
+
+**Goal:** A word sent from another app opens Search with the text filled in and searched (filter reset to All), and offers **Add manually**, which opens the Add form with the title filled in.
+
+### Database, dependencies, setup
+No Room schema change, no migration, no Supabase change, no new dependency.
+
+### Files created (under `app/src/main/java/com/mindvault/`)
+| File | Save to | Purpose |
+|---|---|---|
+| `QuickLookupViewModel.kt` | `app/` | Exposes only the pending lookup's ID to the NavHost; never consumes it |
+
+### Files modified (complete files; the edits were applied to your uploaded copies by exact-match replacement, so nothing else changed)
+| File | Save to | Change |
+|---|---|---|
+| `Searchuistate.kt` | `feature/search/` | New field `quickLookupText: String? = null` (default, so existing code and tests still compile) |
+| `Searchviewmodel.kt` | `feature/search/` | New last constructor parameter `quickLookupInbox`; `pendingQuickLookup` flow; `onQuickLookup(lookup)`; `quickLookupText` state added to the `combine` and `buildState`; cleared when the user types something else or searches something else |
+| `SearchScreen.kt` | `feature/search/` | Collects the pending lookup and runs it once on screen; a text button "Add “word” manually" under the filters while the shown search came from another app; two imports |
+| `MindVaultNavHost.kt` | `core/navigation/` | Gets `QuickLookupViewModel`; one `LaunchedEffect` that opens Search when a lookup is pending; a private list of "hold" routes |
+
+Diff size against your copies: Searchviewmodel +28 / −1 (the `combine` transform line), Searchuistate +2, SearchScreen +28, NavHost +25. `MindVaultDestination.kt` is unchanged: "Add manually" reuses the existing `AddKnowledgeFromSearch` route with an empty definition.
+
+### Required follow-up in tests
+`SearchViewModel` has one new constructor parameter. In `Searchviewmodeltest.kt` (and anywhere else a `SearchViewModel(...)` is built), add `QuickLookupInbox()` as the **last argument**, with `import com.mindvault.domain.usecase.QuickLookupInbox`. I have not seen that file, so I have not changed it.
+
+### Key behaviour
+- **Who runs the lookup:** `SearchScreen` (a `LaunchedEffect` keyed on the lookup's ID), not the ViewModel, so only a Search screen that is actually on screen acts. The ViewModel's `onQuickLookup` first takes the lookup out of the inbox, so it runs once even if two Search screens exist.
+- **What it does:** cancels any running search, resets to a clean state with filter **All**, puts the text in the field, closes the keyboard and runs the normal Search V2 search. Save, Edit first, Retry, partial-failure notices and recent searches all behave as usual (a lookup that finds something is added to recent searches).
+- **Add manually:** shown while the field still holds the looked-up text, including during loading, offline, error and no-result states, so the user can always type their own definition. It opens the Add form with the title filled in, type Word (changeable in the form), empty definition. It disappears when the user edits the field or searches something else.
+- **Navigation:** when a lookup is pending the NavHost goes to Search the same way the bottom bar does (other tabs keep their state; from a cold start Back returns to Home). If Search is already open nothing moves.
+- **Account change:** the effect also depends on the active vault, so a lookup that arrives around a sign-in / sign-out reset still ends up on Search, after the reset to Home.
+- **Unsaved work:** while the Add, Add-from-search or Edit form, or the sign-in screen, is open, the lookup waits and opens as soon as the user leaves that screen. Nothing is discarded.
+- **No navigation before the graph exists:** the effect does nothing until the current route is known (navigating earlier would crash on a cold start).
+
+### Known limits
+- A lookup held behind a form gives no sign that it arrived; it appears when the user leaves the form.
+- On a cold start Home may flash for a moment before Search opens.
+- A lookup is in memory only; if the process dies before it runs, it is gone.
+- Review and Practice sessions are left (not held) when a lookup arrives. Each rating is saved as it is made; Practice records nothing.
+- "Add manually" always starts as type Word; a phrase or concept needs the type changed in the form.
+- No ViewModel test for `onQuickLookup` yet (I need `Searchviewmodeltest.kt` and `Searchtestsupport.kt` to write it against your fakes). No Compose or NavHost tests.
+
+### Likely compile-fix spots
+`Searchviewmodel.kt` (the five-flow `combine` overload), `SearchScreen.kt` (`TextOverflow`, `KnowledgeType` imports), `MindVaultNavHost.kt` (the `by lazy` top-level property).
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+```
+Record the real output.
+
+### Manual checks
+1. Select a word (e.g. "entropy") in another app, tap **MindVault**: Search opens with "entropy" in the field, filter All, results loading then shown, and "Add “entropy” manually" under the filters.
+2. **Save** a result and **Edit first** on another: both work as before. A saved result shows "Already in your Vault".
+3. Tap **Add “entropy” manually**: the Add form opens with the title filled in and an empty definition; type a definition and save; the item is in the Vault and in the default deck.
+4. Edit the text in the field: the "Add manually" button disappears. Search something else: it stays gone.
+5. Send the same word twice in a row: the search runs again each time.
+6. With MindVault on the Vault tab (or Flashcards), send a word: Search opens; the other tabs keep their filters when you return.
+7. Open the Add form, type something, then send a word from another app: MindVault shows the form with your text intact; after you save or go back, Search opens with the word.
+8. Airplane mode, send a word: "Can't connect" shows, and "Add manually" is still there and works.
+9. Send a 150-character sentence: the field holds the first 100 characters. Send a bare link: toast, nothing opens (Phase 1).
+10. Sign out while a lookup is pending, or send a word right after signing in: you end on Search, not stuck on Home.
+11. Existing flows (Search typing/suggestions/recent, Vault, Flashcards, Profile) behave as before.
+
+### Next
+Phase 3: docs only. `IMPLEMENTATION_STATUS`, `ARCHITECTURE` (Search feature gets a "quick lookup" paragraph) and `DESIGN_SYSTEM` §7.4 (the "Add manually" row) additions as separate files, plus the privacy-policy / Play data-safety note. I'll write them after you report the Phase 1 and 2 build and device results.
+### Entry 22 — follow-up (append under Entry 22): only the selected word, test fixes, ViewModel tests
+
+**Status:** Written, not built. Your `gradlew.bat testDebugUnitTest` run stopped at `compileDebugUnitTestKotlin` (3 errors), so nothing in Entry 22 has run yet. Nothing is Verified until you report a real build and test run.
+
+### 1. Only the selected word is searched
+**Problem:** Sharing selected text from a browser (and some other apps) sends the word *plus* the page link, for example `“entropy” https://…`. Phase 1 only ignored a text that was *only* a link, so the whole string went to Search.
+
+**Change:** `QuickLookupParser.parse` now
+- removes every link (`http://`, `https://`, `www.`) wherever it appears,
+- removes quotes (straight, curly, low-9, guillemets) only when they wrap the whole text, so `don't` and `dogs'` are untouched,
+- then trims, collapses whitespace and caps at 100 characters as before.
+  A text that is only a link (or only quotes) still gives nothing: toast, MindVault does not open.
+
+**Files:** `domain/model/QuickLookup.kt` (replace), `QuickLookupParserTest.kt` (replace; the old "link inside text is kept" test is replaced by 5 new tests, 13 tests in total).
+
+**Limit:** apps that add other text around the word (a page title, "Shared from …") can't be cleaned reliably; only links and wrapping quotes are removed. Selecting text and using the selection menu's **MindVault** item sends exactly the selection with no link.
+
+### 2. Compile error caused by Entry 22
+`Searchviewmodeltest.kt:67 No value passed for parameter 'quickLookupInbox'` — expected, as announced in Phase 2. Fixed in the supplied `Searchviewmodeltest.kt`: new field `inbox = QuickLookupInbox()`, passed as `quickLookupInbox = inbox`, plus the import. Complete file, save to `app/src/test/java/com/mindvault/feature/search/`.
+
+### 3. New ViewModel tests (7, in `Searchviewmodeltest.kt`)
+Filter reset to All and the search run from the lookup; runs only once; a stale lookup is ignored; "Add manually" state kept while the field is unchanged and cleared on another edit; cleared by a different search; kept when offline; a lookup that finds something goes into recent searches. They use the existing fakes only (`FakeSearchRepository`, `FakeSettingsRepository`, `FakeKnowledgeRepository`) and have not been run.
+
+### 4. Two compile errors NOT caused by Entry 22 (not fixed yet)
+Neither Phase 1 nor Phase 2 touches these files, so they are older test drift that the first full test compile has revealed:
+- `FakeRepositories.kt:48` — `FakeCategoryRepository` does not implement `delete`. The `CategoryRepository` interface gained `delete` with the category-management work (Entry 20 Phase 3); the fake was not updated. Needs `domain/repository/CategoryRepository.kt` to match the exact signature.
+- `RankSearchResultsUseCaseTest.kt:12` — `Unresolved reference 'invoke'`. The test calls `RankSearchResultsUseCase().invoke(query, results)`; the class evidently has no `invoke`. Needs `domain/usecase/RankSearchResultsUseCase.kt` to see what the method is called.
+  Send those two source files and I will fix the two test files (no production code needs to change unless the files show otherwise).
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+```
+Record the real output.
+
+### Manual checks
+1. In Chrome, select a word and use **Share** → MindVault: the field holds only the word (no link, no quotes).
+2. Select the word and use the selection menu's **MindVault** item: same result.
+3. Share a page with no selection (just a link): toast, MindVault does not open.
+
+### Entry 22 — Phase 3 of 3 (append under Entry 22): docs, test-fake fix, launch notes
+
+**Status:** Documentation only, plus one test-file fix. No production code changed. Phases 1 and 2 work on a device (developer-reported). The unit tests for Entry 22 have **not** been run yet: `testDebugUnitTest` stopped at the test compile (see below). Nothing here counts as test-verified until you paste a passing run.
+
+### Test-file fix
+- `FakeRepositories.kt` (save to `app/src/test/java/com/mindvault/domain/usecase/`): `FakeCategoryRepository` now implements `delete(id)` (removes the category). `CategoryRepository.delete` was added with category management (Entry 20 Phase 3); the fake was never updated. This was the error `Class 'FakeCategoryRepository' is not abstract and does not implement abstract member 'delete'`.
+- `RankSearchResultsUseCaseTest.kt` is **unchanged**. The supplied `RankSearchResultsUseCase` does have `operator fun invoke(rawQuery: String, results: List<SearchResult>)`, so `RankSearchResultsUseCase().invoke(query, results)` should resolve. I can't explain the reported `Unresolved reference 'invoke'` from the files I have; it may disappear once the other errors are fixed. If it remains after this fix, send the full compiler output and `Searchtestsupport.kt`.
+
+### Documentation files supplied (merge into your copies)
+| File | Merge into |
+|---|---|
+| `IMPLEMENTATION_STATUS_QUICK_SEARCH_ADDITIONS.md` | `IMPLEMENTATION_STATUS.md` (§2 rows, §3 rows, §5 limits, §6 decisions, §7 next task) |
+| `ARCHITECTURE_QUICK_SEARCH_ADDITIONS.md` | `ARCHITECTURE.md` (§3 packages, §5 data flow, §9 navigation, §10 tests, §12) |
+| `DESIGN_SYSTEM_QUICK_SEARCH_ADDITIONS.md` | `DESIGN_SYSTEM.md` (§7.4 Search) |
+
+They are additions, not replacement files, because your copies change often.
+
+### Before a public release (not built)
+1. **Privacy policy and Play data-safety form:** text the user selects and sends to MindVault is searched on Wiktionary and Wikipedia (the same disclosure as typing in Search). MindVault does not store the text unless the user saves an item.
+2. **Store listing / onboarding:** one line telling users that selecting a word and choosing "MindVault" (or Share → MindVault) looks it up.
+3. **iOS:** needs its own Share extension (and an action extension for selected text); nothing from this entry carries over except the parser rules and the idea of an in-memory inbox.
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+```
+Record the real output.
+
+### Next
+Paste the real `testDebugUnitTest` and `assembleDebug` output. After that the review history log (postponed from Flashcards V2) is still the next feature task, then Search language editions.
+
+## Entry 23 — Profile stats: "Your progress" card, Stats screen, review history log (synced)
+
+**Status:** Written, not built. Nothing here is Verified until you report a real build, test run and device check.
+
+**Goal:** A compact "Your progress" card on Profile (between Account and Appearance) that opens a full Stats screen. Streak, reviews per day and the rating split need a review history, so a new append-only `review_log` is added locally, synced to Supabase, and written atomically with each rating.
+
+### Decisions (confirmed)
+1. Option A: summary card on Profile + "View stats" opening a Stats screen; all phases merged in one delivery.
+2. A new method `FlashcardRepository.recordReview(...)` saves the review state and the log entry in one transaction. `saveReviewState` stays. The interface method has a default body (saves only) so fakes that were not supplied keep compiling; `FlashcardRepositoryImpl` overrides it.
+3. History survives deleting a card, deck or item (no foreign key, locally and in the cloud).
+4. **Again is not a category and is never logged. Only Hard, Good and Easy answers are logged.** A card rated Again is saved (its schedule still changes) but not logged; when it comes back in the same session, its answer (Hard, Good or Easy) is the entry that is logged. A card rated Hard, Good or Easy the first time is logged right away. Extra practice and Practice are never logged. If a session ends before an Again card is answered again, that card has no entry. So "Reviewed today", the streak and the rating split count answers, and the rating split shows three rows: Hard, Good, Easy.
+5. Streak = consecutive days (device time zone) with at least one logged review; today with no review yet does not break it.
+6. "Due today" = reviewed cards due by calendar day (same rule as the review queues); new cards are shown separately. The count is labelled "Flashcards" (one per deck membership).
+7. Learning = interval under 21 days, Mature = 21 days or more. "Difficult" uses `ReviewQueueBuilder.DIFFICULT_EASE_BELOW` (so Stats always matches the deck screen).
+8. Card placed between Account and Appearance, for guests and signed-in users. The guest vault records history but never syncs.
+9. The rating split covers all time. The "N changes are waiting" sync text now also counts review-log rows.
+
+### Database and migration impact
+- Room **v5 -> v6**, `MIGRATION_5_6`: only creates the empty table `review_log` (`id`, `flashcardId`, `rating` = HARD/GOOD/EASY, `reviewedAt`, `intervalDaysBefore`, `intervalDaysAfter`) and an index on `reviewedAt`. No existing row is touched; no backfill (history starts when this version first runs). Building exports `app/schemas/.../6.json`: **commit it** (`ReviewLogMigrationTest` needs it).
+- **Supabase:** replace `docs/supabase_sync_schema.sql` with the supplied file and **run it in the dev project first, then prod, before running the new app signed in.** It is safe to run again. It adds the table `review_logs` (RLS: read own rows only), its pull index, a "5b" insert-only step in `sync_push`, and a `review_logs` branch in `sync_pull`.
+- No new dependency.
+
+### Files created (under `app/src/main/java/com/mindvault/` unless noted)
+| File | Purpose |
+|---|---|
+| `data/local/entity/ReviewLogEntity.kt` | The history row |
+| `data/local/dao/ReviewLogDao.kt` | Insert-if-absent, get by ID |
+| `data/local/dao/StatsDao.kt` | Read-only aggregate queries for stats |
+| `data/local/relation/StatsRows.kt` | Row types for those queries |
+| `data/repository/StatsRepositoryImpl.kt` | Combines the queries into `StatsRaw` |
+| `domain/model/StatsModels.kt` | `StatsQuery`, `StatsRaw`, `ProgressStats`, `DayActivity`, ... |
+| `domain/repository/StatsRepository.kt` | Contract |
+| `domain/usecase/StatsBuilder.kt` | Pure logic: streak, 7-day activity, categories, query boundaries |
+| `domain/usecase/ObserveProgressStatsUseCase.kt` | Use case |
+| `feature/stats/StatsViewModel.kt`, `StatsScreen.kt` | Stats screen |
+| `feature/profile/ProfileProgressCard.kt` | The Profile card (self-contained; delete its one call in `ProfileScreen` to hide it) |
+| Tests (`app/src/test/java/com/mindvault/`) | `domain/usecase/StatsBuilderTest.kt`, `domain/usecase/RecordCardReviewLogTest.kt`, `data/sync/SyncReviewLogTest.kt` |
+| Tests (`app/src/androidTest/java/com/mindvault/data/local/`) | `StatsDaoTest.kt`, `ReviewLogMigrationTest.kt` |
+
+### Files modified (complete files supplied; only the lines below changed)
+| File | Change |
+|---|---|
+| `data/local/database/MindVaultDatabase.kt` | version 6, `ReviewLogEntity`, `reviewLogDao()`, `statsDao()` |
+| `data/local/database/Migrations.kt` | `MIGRATION_5_6`, added to `MINDVAULT_MIGRATIONS` |
+| `data/local/entity/Syncoutboxentity.kt` | `SyncEntityType.REVIEW_LOG` |
+| `data/sync/Syncmodels.kt` | `SyncTable.REVIEW_LOGS` |
+| `data/sync/Syncwire.kt` | `REVIEW_LOG` upload data |
+| `data/sync/Synclocalstore.kt`, `Roomsynclocalstore.kt` | `reviewLog(id)`, `insertReviewLog(entry)` |
+| `data/sync/Syncengine.kt` | one more push phase (log, after review states) |
+| `data/sync/Syncapplier.kt` | pulled log: insert if the ID is new, ignore otherwise |
+| `domain/repository/FlashcardRepository.kt` | `recordReview` (with default body) |
+| `data/repository/FlashcardRepositoryImpl.kt` | `recordReview`: state + log + both outbox entries in one transaction |
+| `domain/usecase/Recordcardreviewusecase.kt` | Hard/Good/Easy (first rating or the answer after Again) call `recordReview`; Again only saves |
+| `core/di/RepositoryModule.kt` | binds `StatsRepository` |
+| `core/navigation/MindVaultDestination.kt`, `MindVaultNavHost.kt` | `Stats` route (no bottom bar); Profile gets `onViewStatsClick` |
+| `feature/profile/ProfileScreen.kt` | new parameter `onViewStatsClick`; one inserted block between Account and Appearance |
+| `docs/supabase_sync_schema.sql` | see above |
+| Test `data/sync/Fakesynclocalstore.kt` | `logRows`, the two new methods |
+
+### Known limits
+- The streak is counted from the last 400 days of history, and starts the day this ships (no backfill).
+- Numbers refresh on any data change or when the screen is reopened, not at midnight.
+- Review history in the cloud is new user data: add it to the privacy policy and the Play data-safety form.
+- If another file in your project has an exhaustive `when` over `SyncTable` (or implements `SyncLocalStore`), the compiler will point at it; the fix is one more branch / two methods.
+- `recordReview` against a real database (atomicity, outbox entries) is not covered by an automated test yet; extend `OutboxRecordingTest.kt` (send it and I will).
+- No Compose or ViewModel tests for the new screens.
+
+### Likely compile-fix spots
+`StatsScreen.kt` (icon imports `Icons.Filled.BarChart`, `Icons.AutoMirrored.Filled.KeyboardArrowRight`), `StatsDao.kt` (Room must accept the single-row multi-subselect query into `StatsCountsRow`), `ReviewLogMigrationTest.kt` (the `MigrationTestHelper` constructor your other migration tests use).
+
+### Commands
+```
+gradlew.bat testDebugUnitTest
+gradlew.bat assembleDebug
+gradlew.bat connectedDebugAndroidTest
+```
+Record the real output.
+
+### Manual checks
+1. Install over the current build: Profile shows "Your progress" between Account and Appearance with Saved, Due today, Day streak (– for a moment, then numbers). Existing data is intact.
+2. Tap the card: Stats opens, no bottom bar, Back returns to Profile. A brand-new vault shows "No stats yet".
+3. Do a Daily review of 3 cards (rate one Again, then answer it Easy when it returns, and rate the other two Good and Hard): Stats shows "Reviewed today: 3", the Today bar is 3, the streak is 1, and "How reviews went" shows Hard 1, Good 1, Easy 1 (no Again row). Rate a card Again and leave the session before it returns: it adds nothing.
+4. Delete a deck that has reviewed cards: the reviews, streak and rating split do not change.
+5. Check Flashcards numbers: "Due today" equals the sum of due reviews on the deck screens (without new cards); Difficult matches the deck screen's Difficult count.
+6. Signed in: Profile shows changes waiting, then Synced; in Supabase the `review_logs` rows exist. Sign in on a second device or reinstall: the streak and history come back.
+7. Guest vault: reviews are logged and stats work; nothing syncs.
+8. Dark mode: card, bars and legend are readable.
+
+### Documentation to adjust
+- `IMPLEMENTATION_STATUS.md`: add rows "Review history log" (Room v6, Supabase `review_logs`) and "Profile stats" (Written, unverified); §6 decisions above; §7 Next Task: UI overhaul / welcome / demo (your plan), Search language editions.
+- `DESIGN_SYSTEM.md` §7.8: Profile gets a "Your progress" card (3 numbers + "View stats") between Account and Appearance; new §7.9 Stats screen: Overview tiles, Activity (7-day bars with counts), Flashcards (New / Learning / Mature stacked bar with legend), "How reviews went", Library. Meaning is always carried by text and numbers, not colour alone.
+- `ARCHITECTURE.md` §6: `ReviewLog` (append-only, no foreign key); §5: stats flow `StatsDao -> StatsRepository -> StatsBuilder -> StatsViewModel`.
+- Privacy policy and Play data-safety: review history is stored locally and, for signed-in users, in the cloud.
+
+## Entry 23 — Fix failing unit tests
+
+`testDebugUnitTest` reported 5 failures out of 346 tests; these fixes target all 5.
+
+### Fixes
+| Test(s) | Cause | File changed |
+|---|---|---|
+| `SaveSearchResultUseCaseTest` (3 tests), `SearchViewModelTest` line 302 | `SaveSearchResultUseCase` was still the V1 version: duplicate check ignored type and the saved type was hardcoded to WORD | `domain/usecase/SaveSearchResultUseCase.kt` (duplicate check is now title + type via `findByTitleAndType`; type comes from `SearchSaveContent.type`) |
+| `QuickLookupParserTest.aQuotedLinkAloneIsIgnored` | Link regex swallowed the closing quote, leaving a stray opening quote that was returned instead of null | `domain/model/QuickLookup.kt` (link replacement keeps trailing quote characters so the wrapping-quotes rule still applies) |
+
+No test files, schema, dependency or sync changes.
+

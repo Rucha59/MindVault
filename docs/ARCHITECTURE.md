@@ -309,6 +309,9 @@ The exact directory layout may differ if the existing project uses another consi
 - `domain`: app concepts, repository contracts and business use cases.scheduler/ (spaced-repetition algorithm behind ReviewScheduler; Sm2Scheduler is the only implementation).
 - Repositories reach Room only through ActiveDatabase; DAOs and the database are not injectable
   Keep feature-specific UI and state inside the relevant feature package. Do not create a generic framework for hypothetical future features.
+  app: also holds the quick-search entry points: QuickLookupActivity (no screen; receives selected / shared text and forwards it to MainActivity), QuickLookupIntents (reads the text from an intent) and QuickLookupViewModel (lets the navigation host see that a lookup is waiting).
+  domain/model/QuickLookup.kt: QuickLookup and QuickLookupParser (pure cleaning rules).
+  domain/usecase/QuickLookupInbox.kt: in-memory holder of the one pending lookup. It is a state holder rather than a use case; it sits with the use cases so Hilt can inject it without a repository, since nothing is persisted.
 
 ## 4. Architecture Boundaries
 
@@ -410,6 +413,15 @@ Use stable IDs and explicit relationships. The initial conceptual model is:
 - `Flashcard`: ID, knowledge item ID, deck ID, creation timestamp.
 - `ReviewState`: flashcard ID, review status, last-reviewed timestamp, next-due timestamp and scheduling data.
 
+  **Quick lookup (text sent from another app)**
+ - The user selects a word and chooses MindVault in the selection menu, or shares text to MindVault.
+ - QuickLookupActivity (exported, no UI, own empty task affinity, excluded from recents) reads the text with QuickLookupIntents, cleans it with QuickLookupParser and starts MainActivity with FLAG_ACTIVITY_NEW_TASK and a private extra, then closes. This is why MainActivity does not receive the selection intent directly: it would otherwise open inside the other app's task. If nothing is left after cleaning, a toast is shown and MindVault does not open.
+ - MainActivity (onCreate on a fresh launch, onNewIntent otherwise) removes the extra and calls QuickLookupInbox.submit, which cleans the text again and stores one pending QuickLookup (a newer one replaces an unconsumed older one).
+ - MindVaultNavHost observes the pending lookup's ID through QuickLookupViewModel and navigates to the Search tab like a bottom-bar tap. It waits while the Add, Add-from-search, Edit or sign-in screen is open (QuickLookupHoldRoutes) and acts once the user leaves it. It also depends on the active vault, so it still runs after an account-change reset to Home, and it does nothing until the navigation graph exists.
+ - SearchScreen reacts to the pending lookup once it is on screen and calls SearchViewModel.onQuickLookup. That takes the lookup out of the inbox (consume, which succeeds for one caller only), resets the filter to All, fills the field and runs the normal Search V2 search.
+ - While the shown search still belongs to the lookup, the screen offers Add “word” manually, which opens the existing Add-from-search route with the title filled in and an empty definition.
+ -Rules: the lookup is never stored; the cleaned text is the only thing that leaves the device, and only through the normal Search request. SearchViewModel reads QuickLookupInbox directly (an exception to "ViewModel → use case", because the inbox is a stateless in-memory holder with no repository behind it).
+
 Important decisions:
 - One knowledge item can be reused across screens and referenced by flashcards.
 - Avoid copying the definition and notes into each flashcard.
@@ -467,7 +479,8 @@ Use one naming pattern consistently; do not rename existing symbols without a cl
 - Provide empty, loading, error, validation, and confirmation states where relevant.
 - Do not introduce decorative controls that have no behavior.
 - Preserve accessibility, readable contrast, keyboard handling, and back navigation.
-
+-  A quick lookup opens the Search tab through the same navigateToMain as the bottom bar, so other tabs keep their saved state.
+-  Work in progress is never discarded by a lookup: forms and the sign-in screen hold it back.
 ## 10. Testing and Verification
 
 Use the testing approach already configured in the repository. At minimum, test:
@@ -480,6 +493,9 @@ Use the testing approach already configured in the repository. At minimum, test:
 - Deck membership and flashcard retrieval.
 - Review scheduling and persistence.
 - ViewModel state for loading, success, empty and error cases where practical.
+- Lookup cleaning (links, quotes, whitespace, length, surrogate pairs) and the inbox (replace, consume once, stale ID).
+- SearchViewModel.onQuickLookup: filter reset, runs once, stale lookup ignored, "Add manually" state, offline behaviour, recent searches.
+- Not covered by automated tests: QuickLookupActivity, the manifest filters, MainActivity intent handling and the NavHost effect (device checks listed in Entry 22).
 
 After a change:
 1. Review the changed files.
@@ -514,5 +530,6 @@ Do not build these unless explicitly requested:
 - Large bundled knowledge databases
 - Accessibility-service-based text capture
 - Multi-module Gradle restructuring without a demonstrated need
-
+  iOS Share / action extension for quick search.
+  Quick search from other places than text selection and Share (overlay, floating button, accessibility-service capture stay out of scope).
 External Search is part of the MVP. The selected providers (Wiktionary and Wikipedia) are documented in `docs/SEARCH_PROVIDER.md`.

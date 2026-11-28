@@ -43,6 +43,8 @@ data class SearchUiState(
     /** Keys (type:title) currently being saved, so a second tap can't double-save. */
     val savingKeys: Set<String> = emptySet(),
     val saveError: String? = null,
+    /** Set while the shown search came from another app (quick search); the screen then offers "Add manually". */
+    val quickLookupText: String? = null,
 )
 
 /** One-off events for the screen. */

@@ -20,6 +20,7 @@ sealed class MindVaultDestination(val route: String) {
     data object Vault : MindVaultDestination("vault")
     data object Flashcards : MindVaultDestination("flashcards")
     data object Profile : MindVaultDestination("profile")
+    data object Stats : MindVaultDestination("profile/stats")
     data object Auth : MindVaultDestination("auth")
     data object AddKnowledge : MindVaultDestination("knowledge/add")
     data object AddKnowledgeFromSearch : MindVaultDestination(
