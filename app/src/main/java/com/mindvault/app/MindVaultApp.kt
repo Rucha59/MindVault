@@ -1,4 +1,6 @@
+
 package com.mindvault.app
+
 
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
@@ -14,6 +16,8 @@ class MindVaultApp : Application(), Configuration.Provider {
     @Inject lateinit var accountData: AccountDataRepository
     @Inject lateinit var sync: SyncRepository
     @Inject lateinit var workerFactory: HiltWorkerFactory
+    @Inject lateinit var notifications: com.mindvault.data.notifications.NotificationScheduler
+
 
     // WorkManager starts on demand with Hilt's factory (the default initializer is removed in the manifest).
     override val workManagerConfiguration: Configuration
@@ -25,5 +29,6 @@ class MindVaultApp : Application(), Configuration.Provider {
         accountData.start()
         // Then keeps that vault in step with the cloud (app open, after changes, about every 6 hours).
         sync.start()
+        notifications.start()
     }
 }

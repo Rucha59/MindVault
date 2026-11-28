@@ -3,4 +3,26 @@
     <!-- Name shown in the text-selection menu and the Share sheet. -->
     <string name="quick_lookup_label">MindVault</string>
     <string name="quick_lookup_nothing_selected">Select a word or short phrase to look up in MindVault.</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_due">Study reminders</string>
+    <string name="notification_channel_due_description">A daily reminder when flashcards are due.</string>
+    <string name="notification_channel_nudge">Come-back nudges</string>
+    <string name="notification_channel_nudge_description">An occasional reminder to add what you have learned.</string>
+    <string name="notification_due_title">Time to review</string>
+    <plurals name="notification_due_body">
+        <item quantity="one">%d card is ready for review. A quick one!</item>
+        <item quantity="other">%d cards are ready for review. A few minutes is enough.</item>
+    </plurals>
+    <!-- Come-back lines: add or edit freely; they are used in order. -->
+    <string-array name="nudge_lines">
+        <item>Your Vault misses you. Learned a new word lately?</item>
+        <item>A word a day keeps the blank stare away. Save one?</item>
+        <item>Somewhere out there is a word you don\'t know yet. Go find it.</item>
+        <item>Your future self called. They\'d like a few more notes.</item>
+        <item>Your Vault is looking a bit empty. Got something to feed it?</item>
+        <item>Heard something you didn\'t understand? Look it up before it gets away.</item>
+        <item>Even one concept counts. What did you learn today?</item>
+        <item>Words you save are words you remember. Add one?</item>
+    </string-array>
 </resources>

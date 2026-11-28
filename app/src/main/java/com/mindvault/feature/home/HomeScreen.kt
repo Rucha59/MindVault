@@ -83,7 +83,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-
+    NotificationPermissionPrompt() // delete this line to remove the prompt on Home
     Column(modifier.fillMaxSize()) {
         MindVaultTopBar(
             title = "MindVault",

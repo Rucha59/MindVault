@@ -117,6 +117,8 @@ fun ProfileScreen(
             CategoryDeckSetting() // delete or comment out this line to hide the setting
             Spacer(Modifier.height(MindVaultSpacing.space3))
             SearchSuggestionsSetting() // delete or comment out this line to hide the setting
+            Spacer(Modifier.height(MindVaultSpacing.space3))
+            NotificationSetting() // delete or comment out this line to hide the setting
         }
     }
 
